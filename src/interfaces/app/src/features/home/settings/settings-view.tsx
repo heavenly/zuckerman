@@ -263,14 +263,46 @@ export function SettingsView({
 
     setIsResetting(true);
     try {
-      // Clear all localStorage cache first
+      // First, delete all sessions via gateway API if connected
+      // This clears sessions from gateway server's memory
+      if (gatewayClient?.isConnected()) {
+        try {
+          const sessionsResponse = await gatewayClient.request("sessions.list");
+          if (sessionsResponse.ok && sessionsResponse.result) {
+            const sessions = (sessionsResponse.result as { sessions?: Array<{ id: string }> }).sessions || [];
+            // Delete all sessions
+            for (const session of sessions) {
+              try {
+                await gatewayClient.request("sessions.delete", { id: session.id });
+              } catch (err) {
+                console.warn(`Failed to delete session ${session.id}:`, err);
+              }
+            }
+          }
+        } catch (err) {
+          console.warn("Failed to delete sessions via gateway:", err);
+        }
+      }
+
+      // Clear all localStorage cache (includes active sessions, settings, etc.)
       clearStorageByPrefix("zuckerman:");
       
-      // Then delete server-side data
+      // Delete server-side data directory (.zuckerman folder)
       const result = await window.electronAPI.resetAllData();
       if (result.success) {
+        // Restart gateway server to ensure it reloads with clean state
+        const gatewaySettings = settings.gateway;
+        try {
+          await stopServer(gatewaySettings.host, gatewaySettings.port);
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          await startServer(gatewaySettings.host, gatewaySettings.port);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        } catch (err) {
+          console.warn("Failed to restart gateway:", err);
+        }
+
         setShowResetDialog(false);
-        // Reload the app to clear all state and reload sessions from gateway
+        // Reload the app to clear all state
         window.location.reload();
       } else {
         alert(`Failed to reset data: ${result.error || "Unknown error"}`);
