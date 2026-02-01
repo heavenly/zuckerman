@@ -78,9 +78,14 @@ export function useApp(): UseAppReturn {
     return !getStorageItem<string>("zuckerman:onboarding:completed", "");
   });
 
-  // Auto-connect when gateway client is ready
+  // Auto-connect when gateway client is ready (only if not explicitly stopped)
   useEffect(() => {
     if (!gatewayClient) return;
+
+    const isExplicitlyStopped = localStorage.getItem("zuckerman:gateway:explicitly-stopped") === "true";
+    if (isExplicitlyStopped) {
+      return; // Don't auto-connect if gateway was explicitly stopped
+    }
 
     const isActuallyConnected = gatewayClient.isConnected();
     const needsReconnect = !isActuallyConnected && connectionStatus === "disconnected";
@@ -91,21 +96,25 @@ export function useApp(): UseAppReturn {
     }
   }, [gatewayClient, connectionStatus, connect]);
 
-  // Reconnect on mount/remount (handles HMR) - separate effect to ensure it runs
+  // Reconnect on mount/remount (handles HMR) - only if not explicitly stopped
   useEffect(() => {
     if (!gatewayClient) return;
 
-    // Small delay to ensure gateway server is ready and avoid race conditions
+    const isExplicitlyStopped = localStorage.getItem("zuckerman:gateway:explicitly-stopped") === "true";
+    if (isExplicitlyStopped) {
+      return; // Don't auto-connect if gateway was explicitly stopped
+    }
+
     const timeoutId = setTimeout(() => {
       if (gatewayClient && !gatewayClient.isConnected() && connectionStatus === "disconnected") {
         console.log("[App] Attempting reconnect after mount/HMR...");
         connect();
       }
-    }, 1000); // Longer delay to ensure gateway server is ready
+    }, 1000);
 
     return () => clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gatewayClient]); // Only depend on gatewayClient to trigger on mount/HMR
+  }, [gatewayClient]);
 
   // Load agents when connected
   useEffect(() => {

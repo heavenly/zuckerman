@@ -77,19 +77,39 @@ export async function startGateway(host: string = "127.0.0.1", port: number = 18
  * Stop the gateway server
  */
 export async function stopGateway(host: string = "127.0.0.1", port: number = 18789): Promise<{ success: boolean; error?: string }> {
+  // #region agent log
+  const fs = await import('node:fs');
+  const logPath = '/Users/dvirdaniel/Desktop/zuckerman/.cursor/debug.log';
+  fs.appendFileSync(logPath, JSON.stringify({location:'gateway-manager.ts:79',message:'stopGateway called',data:{host,port,hasGatewayServer:!!gatewayServer},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})+'\n');
+  // #endregion
   try {
     // Close the server instance if we have it
     if (gatewayServer) {
+      // #region agent log
+      fs.appendFileSync(logPath, JSON.stringify({location:'gateway-manager.ts:85',message:'closing gatewayServer',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})+'\n');
+      // #endregion
       await gatewayServer.close("Stopped via API");
       gatewayServer = null;
+      // #region agent log
+      fs.appendFileSync(logPath, JSON.stringify({location:'gateway-manager.ts:88',message:'gatewayServer closed',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})+'\n');
+      // #endregion
     }
 
     // Also kill any process on the port (in case it was started externally)
+    // #region agent log
+    fs.appendFileSync(logPath, JSON.stringify({location:'gateway-manager.ts:92',message:'calling killPort',data:{port},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})+'\n');
+    // #endregion
     await killPort(port);
+    // #region agent log
+    fs.appendFileSync(logPath, JSON.stringify({location:'gateway-manager.ts:94',message:'killPort completed',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})+'\n');
+    // #endregion
 
     // Wait a bit and verify it's stopped
     await new Promise((resolve) => setTimeout(resolve, 500));
     const stillRunning = await isGatewayRunning(host, port);
+    // #region agent log
+    fs.appendFileSync(logPath, JSON.stringify({location:'gateway-manager.ts:99',message:'status check after stop',data:{stillRunning},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})+'\n');
+    // #endregion
     
     if (stillRunning) {
       return { success: false, error: "Gateway is still running" };
@@ -98,6 +118,9 @@ export async function stopGateway(host: string = "127.0.0.1", port: number = 187
     return { success: true };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "Unknown error";
+    // #region agent log
+    fs.appendFileSync(logPath, JSON.stringify({location:'gateway-manager.ts:106',message:'stopGateway error',data:{error:errorMessage},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})+'\n');
+    // #endregion
     return { success: false, error: `Failed to stop gateway: ${errorMessage}` };
   }
 }

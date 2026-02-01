@@ -437,9 +437,7 @@ export function SettingsView({
                                 settings.gateway.host,
                                 settings.gateway.port
                               );
-                              if (success && gatewayClient) {
-                                gatewayClient.disconnect();
-                              }
+                              // Client disconnect is handled in stopServer
                             } else {
                               const success = await startServer(
                                 settings.gateway.host,

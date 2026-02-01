@@ -1,5 +1,6 @@
 import { isGatewayRunning } from "@core/gateway/gateway-status.js";
 import { startGatewayServer, type GatewayServer } from "@world/communication/gateway/server/index.js";
+import { killPort } from "@core/utils/kill-port.js";
 
 let gatewayServer: GatewayServer | null = null;
 let startingPromise: Promise<{ success: boolean; error?: string }> | null = null;
@@ -122,22 +123,63 @@ export async function stopGateway(
   host: string = "127.0.0.1",
   port: number = 18789
 ): Promise<{ success: boolean; error?: string }> {
+  console.log(`[Gateway] Stopping gateway on ${host}:${port}...`);
+  
   try {
+    // First, try to close the server instance if we have it
     if (gatewayServer) {
-      await gatewayServer.close("Stopped via API");
-      gatewayServer = null;
+      console.log(`[Gateway] Closing gateway server instance...`);
+      try {
+        await gatewayServer.close("Stopped via API");
+        gatewayServer = null;
+        console.log(`[Gateway] Server instance closed`);
+      } catch (err) {
+        console.warn(`[Gateway] Error closing server instance:`, err);
+        gatewayServer = null;
+      }
     }
 
-    await wait(500);
-    const stillRunning = await isGatewayRunning(host, port);
-    
-    if (stillRunning) {
-      return { success: false, error: "Gateway is still running" };
+    // Always kill any process on the port to ensure it's fully stopped
+    // This handles cases where the server reference was lost or server was started externally (CLI, etc.)
+    console.log(`[Gateway] Killing processes on port ${port}...`);
+    try {
+      await killPort(port);
+      console.log(`[Gateway] killPort completed`);
+    } catch (err) {
+      console.warn(`[Gateway] killPort error (may be expected if no process found):`, err);
     }
 
-    return { success: true };
+    // Wait and verify the server is actually stopped
+    // httpServer.close() is asynchronous and may take time to release the port
+    console.log(`[Gateway] Verifying gateway is stopped...`);
+    for (let attempt = 0; attempt < 15; attempt++) {
+      await wait(300);
+      const stillRunning = await isGatewayRunning(host, port);
+      if (!stillRunning) {
+        console.log(`[Gateway] Gateway stopped successfully (verified after ${attempt + 1} attempts)`);
+        return { success: true };
+      }
+    }
+
+    // If still running after multiple attempts, try killPort again as last resort
+    console.log(`[Gateway] Gateway still running, attempting forceful kill...`);
+    try {
+      await killPort(port);
+      await wait(1000); // Wait longer after forceful kill
+      const stillRunning = await isGatewayRunning(host, port);
+      if (!stillRunning) {
+        console.log(`[Gateway] Gateway stopped after forceful kill`);
+        return { success: true };
+      }
+    } catch (err) {
+      console.warn(`[Gateway] Error during forceful kill:`, err);
+    }
+
+    console.error(`[Gateway] Gateway is still running after all stop attempts`);
+    return { success: false, error: "Gateway is still running after stop attempt" };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "Unknown error";
+    console.error(`[Gateway] Failed to stop gateway:`, err);
     return { success: false, error: `Failed to stop gateway: ${errorMessage}` };
   }
 }

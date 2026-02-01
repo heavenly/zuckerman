@@ -109,10 +109,52 @@ export async function startGatewayServer(
       resolve({
         close: async (reason?: string) => {
           console.log(`[Gateway] Closing server${reason ? `: ${reason}` : ""}`);
+          
+          // Stop channels and watcher first
           await channelRegistry.stopAll();
           await reloadWatcher.stop();
-          wss.close();
-          httpServer.close();
+          
+          // Forcefully close all WebSocket connections
+          const closePromises: Promise<void>[] = [];
+          clients.forEach((client) => {
+            try {
+              if (client.socket.readyState === 1) { // OPEN
+                const closePromise = new Promise<void>((resolve) => {
+                  client.socket.once("close", () => resolve());
+                  client.socket.close(1001, reason || "Server shutting down");
+                  // Timeout after 1 second
+                  setTimeout(() => resolve(), 1000);
+                });
+                closePromises.push(closePromise);
+              }
+            } catch (err) {
+              // Ignore errors closing individual connections
+            }
+          });
+          clients.clear();
+          
+          // Wait for all connections to close (with timeout)
+          await Promise.race([
+            Promise.all(closePromises),
+            new Promise((resolve) => setTimeout(resolve, 2000)),
+          ]);
+          
+          // Close WebSocket server
+          await new Promise<void>((resolve) => {
+            wss.close(() => resolve());
+            // Timeout after 1 second
+            setTimeout(() => resolve(), 1000);
+          });
+          
+          // Close HTTP server
+          await new Promise<void>((resolve) => {
+            httpServer.close(() => {
+              console.log(`[Gateway] Server closed`);
+              resolve();
+            });
+            // Timeout after 2 seconds
+            setTimeout(() => resolve(), 2000);
+          });
         },
         port,
       });

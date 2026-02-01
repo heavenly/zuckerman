@@ -62,8 +62,43 @@ export function createGatewayCommand(): Command {
       const host = options.host;
 
       try {
+        // Check if gateway is running first
+        const running = await isGatewayRunning(host, port);
+        if (!running) {
+          console.log(`Gateway is not running on ws://${host}:${port}`);
+          return;
+        }
+
+        console.log(`Stopping gateway on ws://${host}:${port}...`);
+        
+        // Kill processes on the port
         await killPort(port);
-        console.log(`Gateway stopped on ws://${host}:${port}`);
+        
+        // Verify it's actually stopped
+        let stopped = false;
+        for (let attempt = 0; attempt < 10; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          const stillRunning = await isGatewayRunning(host, port);
+          if (!stillRunning) {
+            stopped = true;
+            break;
+          }
+        }
+
+        if (stopped) {
+          console.log(`✓ Gateway stopped successfully`);
+        } else {
+          // Try one more time
+          await killPort(port);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          const stillRunning = await isGatewayRunning(host, port);
+          if (!stillRunning) {
+            console.log(`✓ Gateway stopped after retry`);
+          } else {
+            console.error(`✗ Gateway is still running after stop attempt`);
+            process.exit(1);
+          }
+        }
       } catch (err) {
         console.error("Failed to stop gateway:", err);
         process.exit(1);
