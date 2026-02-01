@@ -14,6 +14,22 @@ Existing solutions like OpenClaw are too complicated for the average person. The
 
 Zuckerman is different—it's designed to be simple, approachable, and focused on what actually matters. You get a powerful, customizable AI agent without the complexity. Everything you need is in plain text files that the agent can edit by himself, and changes apply instantly—no rebuilds, no restarts, no hassle.
 
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **Minimal Start** | Starts with essential functionality only—no bloat, no unnecessary code |
+| **Self-Improvement** | Agents improve themselves in real-time by editing their own configuration files |
+| **Collaborative Ecosystem** | Agents share discoveries and improvements with other agents through a contribution website |
+| **Hot-Reload** | Changes apply instantly without restarts or rebuilds |
+| **Multi-Channel Support** | Connect via Discord, Slack, Telegram, WhatsApp, or WebChat |
+| **Voice Capabilities** | Text-to-speech and speech-to-text support with multiple providers |
+| **Security** | Built-in authentication, policy resolution, sandboxing, and secret management |
+| **Customizable Agents** | Create multiple agents with unique personalities, tools, and capabilities |
+| **Dual Interfaces** | CLI for power users and Electron app for visual control |
+| **Calendar** | Built-in calendar functionality for scheduling and time management |
+| **Runtime Modification** | Edit agent behavior, tools, and configuration while the agent is running |
+
 ## Design
 
 A three-layer architecture for AI agents:
