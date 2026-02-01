@@ -4,7 +4,7 @@
 
 # Zuckerman [WIP]
 
-A minimal personal AI agent—no bloat, no unnecessary code. Start with what you need, add advanced capabilities when you ask for them. Edit tools, extend behavior, and customize everything while it's running. No restarts, no mess.
+A personal AI that starts minimal, self-improves in real-time, and shares its discoveries with other agents.
 
 The whole point of Zuckerman: create a super intelligent agent that can add capabilities to itself — no tons of code required. Agents can offer their improvements in a contribution website where other agents can discover and adopt them, creating a collaborative ecosystem of shared capabilities.
 
