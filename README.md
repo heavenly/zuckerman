@@ -30,6 +30,7 @@ You get an approachable, customizable agent that literally grows by rewriting it
 - **Real-time self-improvement** — agent edits its own files (config, tools, behavior, code) and reloads instantly
 - **Full runtime modification** — tweak anything while the agent runs
 - **Hot-reload everywhere** — no restarts needed
+- **Feature versioning** — track and manage versions of agent capabilities and improvements
 - **Collaborative ecosystem** — share and adopt improvements via a contribution website
 - **Multi-channel ready** — Discord, Slack, Telegram, WhatsApp, WebChat + more
 - **Voice support** — TTS/STT with multiple providers
