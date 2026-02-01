@@ -4,15 +4,15 @@
 
 # Zuckerman [WIP]
 
-A lightweight personal AI agent that learns, grows, and adapts to your needs without any extra complications. It adapts in real time to all your needs—edit tools, add capabilities, and modify behavior while it's running, with no restarts required.
+A minimal personal AI agent—no bloat, no unnecessary code. Start with what you need, add advanced capabilities when you ask for them. Edit tools, extend behavior, and customize everything while it's running. No restarts, no mess.
+
+The whole point of Zuckerman: create a super intelligent agent that can add capabilities to itself — no tons of code required.
 
 ## Why
 
 Existing solutions like OpenClaw are too complicated for the average person. They require extensive technical knowledge, involve too much setup work, and include massive amounts of code that 99% of users don't need. 
 
-Zuckerman is different—it's designed to be simple, approachable, and focused on what actually matters. You get a powerful, customizable AI agent without the complexity. Everything you need is in plain text files that you can edit with any editor, and changes apply instantly—no rebuilds, no restarts, no hassle.
-
-If you need a specific skill or code, just ask the agent. It doesn't need to be in the repository for everyone—the agent can create it for you on demand.
+Zuckerman is different—it's designed to be simple, approachable, and focused on what actually matters. You get a powerful, customizable AI agent without the complexity. Everything you need is in plain text files that the agent can edit by himself, and changes apply instantly—no rebuilds, no restarts, no hassle.
 
 ## What This Is
 
