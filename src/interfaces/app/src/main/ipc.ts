@@ -1,7 +1,6 @@
 import { ipcMain, app } from "electron";
 import { startGateway, stopGateway, getGatewayStatus, cleanupGateway, getGatewayLogs, clearGatewayLogs } from "@core/gateway/gateway-manager.js";
 import { getApiKeys, saveApiKeys } from "@main/env-manager.js";
-import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, rmSync } from "node:fs";
@@ -37,14 +36,8 @@ export function setupIpcHandlers(): void {
   // Gateway management handlers
   ipcMain.handle("gateway:start", async (_, host: string, port: number) => {
     console.log("[IPC] gateway:start handler called", { host, port });
-    // #region agent log
-    try{appendFileSync('/Users/dvirdaniel/Desktop/zuckerman/.cursor/debug.log',JSON.stringify({location:'ipc.ts:34',message:'IPC gateway:start handler called',data:{host,port},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'G'})+'\n');}catch(e){console.error('[DEBUG] Failed to write log:',e);}
-    // #endregion
     const result = await startGateway(host, port);
     console.log("[IPC] gateway:start handler result", result);
-    // #region agent log
-    try{appendFileSync('/Users/dvirdaniel/Desktop/zuckerman/.cursor/debug.log',JSON.stringify({location:'ipc.ts:36',message:'IPC gateway:start handler result',data:{success:result.success,error:result.error},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'G'})+'\n');}catch(e){console.error('[DEBUG] Failed to write log:',e);}
-    // #endregion
     return result;
   });
 

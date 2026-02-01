@@ -1,7 +1,6 @@
 import { killPort } from "./kill-port.js";
 import { isGatewayRunning } from "./gateway-status.js";
 import { startGatewayServer, type GatewayServer } from "@world/communication/gateway/server/index.js";
-import { appendFileSync } from "node:fs";
 
 let gatewayServer: GatewayServer | null = null;
 let gatewayPort: number = 18789;
@@ -12,15 +11,9 @@ let gatewayHost: string = "127.0.0.1";
  */
 export async function startGateway(host: string = "127.0.0.1", port: number = 18789): Promise<{ success: boolean; error?: string }> {
   console.log(`[Gateway] startGateway called with host=${host}, port=${port}`);
-  // #region agent log
-  try{appendFileSync('/Users/dvirdaniel/Desktop/zuckerman/.cursor/debug.log',JSON.stringify({location:'gateway-manager.ts:12',message:'startGateway called',data:{host,port},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'E'})+'\n');}catch(e){console.error('[DEBUG] Failed to write log:',e);}
-  // #endregion
   
   // Check if already running
   const alreadyRunning = await isGatewayRunning(host, port);
-  // #region agent log
-  try{appendFileSync('/Users/dvirdaniel/Desktop/zuckerman/.cursor/debug.log',JSON.stringify({location:'gateway-manager.ts:16',message:'isGatewayRunning check result',data:{alreadyRunning},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})+'\n');}catch(e){}
-  // #endregion
   if (alreadyRunning) {
     console.log(`[Gateway] Gateway is already running on ${host}:${port}`);
     return { success: true };
@@ -48,26 +41,15 @@ export async function startGateway(host: string = "127.0.0.1", port: number = 18
   gatewayPort = port;
 
   try {
-    // #region agent log
-    try{appendFileSync('/Users/dvirdaniel/Desktop/zuckerman/.cursor/debug.log',JSON.stringify({location:'gateway-manager.ts:43',message:'Calling startGatewayServer',data:{host,port},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})+'\n');}catch(e){}
-    // #endregion
     console.log(`[Gateway] Starting gateway server directly...`);
     
     // Import and start the gateway server directly - no process spawning!
     gatewayServer = await startGatewayServer({ host, port });
-    
-    // #region agent log
-    try{appendFileSync('/Users/dvirdaniel/Desktop/zuckerman/.cursor/debug.log',JSON.stringify({location:'gateway-manager.ts:47',message:'startGatewayServer succeeded',data:{port:gatewayServer.port},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})+'\n');}catch(e){}
-    // #endregion
     console.log(`[Gateway] Gateway server started successfully on ws://${host}:${port}`);
     return { success: true };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "Unknown error";
     const errorCode = (err as NodeJS.ErrnoException).code;
-    
-    // #region agent log
-    try{appendFileSync('/Users/dvirdaniel/Desktop/zuckerman/.cursor/debug.log',JSON.stringify({location:'gateway-manager.ts:52',message:'startGatewayServer failed',data:{error:errorMessage,code:errorCode,stack:err instanceof Error?err.stack:undefined},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'F'})+'\n');}catch(e){console.error('[DEBUG] Failed to write log:',e);}
-    // #endregion
     
     // Handle EADDRINUSE error - port is already in use
     if (errorCode === 'EADDRINUSE' || errorMessage.includes('EADDRINUSE')) {

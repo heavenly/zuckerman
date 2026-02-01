@@ -67,9 +67,6 @@ export class GatewayClient {
     return new Promise((resolve, reject) => {
       try {
         const url = `ws://${this.host}:${this.port}`;
-        // #region agent log
-        fetch('http://127.0.0.1:7245/ingest/1837ab77-87c8-488b-a311-1ab411424999',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'gateway/client.ts:67',message:'GatewayClient.connect() creating WebSocket',data:{url},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
-        // #endregion
         console.log(`[GatewayClient] Attempting to connect to ${url}`);
         this.ws = new WebSocket(url);
 
@@ -85,9 +82,6 @@ export class GatewayClient {
         }, 10000); // 10 second timeout
 
         this.ws.onopen = () => {
-          // #region agent log
-          fetch('http://127.0.0.1:7245/ingest/1837ab77-87c8-488b-a311-1ab411424999',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'gateway/client.ts:84',message:'WebSocket onopen event',data:{url},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
-          // #endregion
           clearTimeout(timeout);
           console.log(`[GatewayClient] Connected to ${url}`);
           this.reconnectAttempts = 0;
@@ -151,18 +145,12 @@ export class GatewayClient {
         };
 
         this.ws.onerror = (error) => {
-          // #region agent log
-          fetch('http://127.0.0.1:7245/ingest/1837ab77-87c8-488b-a311-1ab411424999',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'gateway/client.ts:147',message:'WebSocket onerror event',data:{url,error:error instanceof Error?error.message:String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
-          // #endregion
           const errorObj = error instanceof Error ? error : new Error("WebSocket error");
           this.options.onError?.(errorObj);
           reject(errorObj);
         };
 
         this.ws.onclose = (event) => {
-          // #region agent log
-          fetch('http://127.0.0.1:7245/ingest/1837ab77-87c8-488b-a311-1ab411424999',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'gateway/client.ts:153',message:'WebSocket onclose event',data:{url,code:event.code,reason:event.reason,wasClean:event.wasClean},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
-          // #endregion
           this.options.onDisconnect?.();
           this.attemptReconnect();
         };
