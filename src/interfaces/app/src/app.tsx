@@ -9,6 +9,7 @@ import { HomePage } from "./features/home/home-page";
 import { SettingsPage } from "./features/home/settings/settings-page";
 import { InspectorPage } from "./features/home/inspector-page";
 import { AgentPage } from "./features/home/agent/agent-page";
+import { CalendarPage } from "./features/home/calendar/calendar-page";
 
 declare global {
   interface Window {
@@ -96,6 +97,14 @@ function AppContent() {
                 element={
                   <InspectorPage
                     gatewayClient={app.gatewayClient}
+                    onClose={() => app.handleSidebarAction("navigate-home", {})}
+                  />
+                } 
+              />
+              <Route 
+                path="/calendar" 
+                element={
+                  <CalendarPage
                     onClose={() => app.handleSidebarAction("navigate-home", {})}
                   />
                 } 

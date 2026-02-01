@@ -5,7 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Plus, MessageSquare, Users, Hash, Settings, Code, ChevronDown, ChevronRight, Search, Bot, RotateCcw, Archive } from "lucide-react";
+import { Plus, MessageSquare, Users, Hash, Settings, Code, ChevronDown, ChevronRight, Search, Bot, RotateCcw, Archive, Calendar } from "lucide-react";
 import type { AppState } from "../types/app-state";
 
 interface SidebarProps {
@@ -19,10 +19,11 @@ interface CollapsibleSectionProps {
   count?: number;
   defaultExpanded?: boolean;
   alwaysExpanded?: boolean;
+  actionButton?: React.ReactNode;
   children: React.ReactNode;
 }
 
-function CollapsibleSection({ title, count, defaultExpanded = true, alwaysExpanded = false, children }: CollapsibleSectionProps) {
+function CollapsibleSection({ title, count, defaultExpanded = true, alwaysExpanded = false, actionButton, children }: CollapsibleSectionProps) {
   const [isExpanded, setIsExpanded] = useState(() => {
     if (alwaysExpanded) return true;
     return defaultExpanded;
@@ -46,7 +47,7 @@ function CollapsibleSection({ title, count, defaultExpanded = true, alwaysExpand
         style={{ backgroundColor: 'transparent' }}
         disabled={alwaysExpanded}
       >
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-1">
           {!alwaysExpanded && (
             expanded ? (
               <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform" />
@@ -63,6 +64,11 @@ function CollapsibleSection({ title, count, defaultExpanded = true, alwaysExpand
             </Badge>
           )}
         </div>
+        {actionButton && (
+          <div onClick={(e) => e.stopPropagation()}>
+            {actionButton}
+          </div>
+        )}
       </button>
       {expanded && (
         <div className="mt-0.5">
@@ -179,6 +185,8 @@ export function Sidebar({ state, activeSessionIds, onAction }: SidebarProps) {
     ? "settings"
     : location.pathname === "/inspector"
     ? "inspector"
+    : location.pathname === "/calendar"
+    ? "calendar"
     : "home";
 
   // Filter sessions based on search
@@ -225,7 +233,7 @@ export function Sidebar({ state, activeSessionIds, onAction }: SidebarProps) {
       style={{ backgroundColor: 'hsl(var(--sidebar-background))' }}
     >
       {/* Quick Actions Bar - GitHub style */}
-      <div className="p-4 border-b border-sidebar-border space-y-3">
+      <div className="p-4 border-b border-sidebar-border">
         <div className="relative">
           <Search 
             className="absolute h-4 w-4 text-muted-foreground pointer-events-none z-10" 
@@ -245,25 +253,53 @@ export function Sidebar({ state, activeSessionIds, onAction }: SidebarProps) {
             style={{ paddingLeft: '36px' }}
           />
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full h-8 text-[13px] font-normal justify-start px-3 hover:bg-accent/50 transition-colors"
-          onClick={() => onAction("new-session", {})}
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          New session
-        </Button>
       </div>
 
       <ScrollArea className="flex-1">
         <div className="py-2 px-1 space-y-1">
+          {/* Calendar */}
+          <div className="px-3 pb-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className={`w-full h-8 text-sm font-normal justify-start px-3 transition-colors relative ${
+                currentPage === "calendar"
+                  ? "text-foreground font-medium"
+                  : "text-foreground/70 hover:text-foreground hover:bg-accent/50"
+              }`}
+              style={{
+                backgroundColor: currentPage === "calendar" ? 'hsl(var(--accent))' : 'transparent',
+              }}
+              onClick={() => onAction("show-calendar", {})}
+            >
+              {currentPage === "calendar" && (
+                <div 
+                  className="absolute left-0 top-0 bottom-0 w-0.5 rounded-r"
+                  style={{ backgroundColor: 'hsl(var(--primary))' }}
+                />
+              )}
+              <Calendar className="h-4 w-4 mr-2" />
+              Calendar
+            </Button>
+          </div>
+
+          <Separator className="my-2" />
+
           {/* Active Sessions */}
           <CollapsibleSection
             title="Active Sessions"
             count={activeSessions.length}
             defaultExpanded={true}
             alwaysExpanded={activeSessions.length > 0}
+            actionButton={
+              <button
+                onClick={() => onAction("new-session", {})}
+                className="p-1 rounded-md hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
+                title="New session"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            }
           >
             <div className="px-2 space-y-0.5">
               {activeSessions.length === 0 ? (

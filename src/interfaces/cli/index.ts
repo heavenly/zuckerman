@@ -20,6 +20,7 @@ import { createGatewayCommand } from "./commands/gateway.js";
 import { createStatusCommand } from "./commands/status.js";
 import { createChannelsCommand } from "./commands/channels.js";
 import { createConfigCommand } from "./commands/config.js";
+import { createCalendarCommand } from "./commands/calendar.js";
 
 const program = new Command();
 
@@ -35,6 +36,7 @@ program.addCommand(createGatewayCommand());
 program.addCommand(createStatusCommand());
 program.addCommand(createChannelsCommand());
 program.addCommand(createConfigCommand());
+program.addCommand(createCalendarCommand());
 
 // Utility command
 program

@@ -2,6 +2,9 @@ import { ipcMain, app } from "electron";
 import { startGateway, stopGateway, getGatewayStatus, cleanupGateway, getGatewayLogs, clearGatewayLogs } from "@core/gateway/gateway-manager.js";
 import { getApiKeys, saveApiKeys } from "@main/env-manager.js";
 import { appendFileSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
 
 export function setupIpcHandlers(): void {
   // App info handlers
@@ -60,6 +63,24 @@ export function setupIpcHandlers(): void {
   ipcMain.handle("gateway:clear-logs", async () => {
     clearGatewayLogs();
     return { success: true };
+  });
+
+  // Calendar events handlers
+  ipcMain.handle("calendar:get-events", async () => {
+    const calendarDir = join(homedir(), ".zuckerman", "calendar");
+    const eventsFile = join(calendarDir, "events.json");
+    
+    if (!existsSync(eventsFile)) {
+      return { events: [] };
+    }
+
+    try {
+      const data = readFileSync(eventsFile, "utf-8");
+      const events = JSON.parse(data);
+      return { events };
+    } catch (error) {
+      return { events: [], error: error instanceof Error ? error.message : "Failed to load events" };
+    }
   });
 
   // Cleanup on app quit

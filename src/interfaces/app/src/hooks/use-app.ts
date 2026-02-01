@@ -192,6 +192,9 @@ export function useApp(): UseAppReturn {
         case "show-settings":
           navigate("/settings");
           break;
+        case "show-calendar":
+          navigate("/calendar");
+          break;
         case "navigate-home":
           navigate("/");
           break;

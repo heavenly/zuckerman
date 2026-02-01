@@ -24,6 +24,9 @@ export interface ElectronAPI {
   // API Key management
   getApiKeys: () => Promise<{ anthropic?: string; openai?: string; openrouter?: string }>;
   saveApiKeys: (keys: { anthropic?: string; openai?: string; openrouter?: string }) => Promise<{ success: boolean; error?: string }>;
+  
+  // Calendar events
+  getCalendarEvents: () => Promise<{ events: Array<any>; error?: string }>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -56,6 +59,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // API Key management
   getApiKeys: () => ipcRenderer.invoke("api-keys:get"),
   saveApiKeys: (keys: { anthropic?: string; openai?: string; openrouter?: string }) => ipcRenderer.invoke("api-keys:save", keys),
+  
+  // Calendar events
+  getCalendarEvents: () => ipcRenderer.invoke("calendar:get-events"),
 } as ElectronAPI);
 
 // Expose platform info for safe area detection

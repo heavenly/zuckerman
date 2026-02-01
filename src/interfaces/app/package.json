@@ -2,12 +2,12 @@
   "name": "@zuckerman/app",
   "version": "0.1.0",
   "description": "Zuckerman Control Panel - Electron App",
-  "main": "dist/main/index.js",
+  "main": "dist/main/interfaces/app/src/main/index.js",
   "type": "module",
   "scripts": {
     "dev": "concurrently \"pnpm run dev:vite\" \"pnpm run dev:electron\"",
     "dev:vite": "vite",
-    "dev:electron": "wait-on http://localhost:3000 && pnpm run build:main && cross-env NODE_ENV=development electron dist/main/index.js",
+    "dev:electron": "wait-on http://localhost:3000 && pnpm run build:main && cross-env NODE_ENV=development electron dist/main/interfaces/app/src/main/index.js",
     "build": "pnpm run build:main && pnpm run build:renderer",
     "build:main": "tsc -p tsconfig.main.json && tsc-alias -p tsconfig.main.json && tsc -p tsconfig.preload.json && mv dist/main/preload.js dist/main/preload.cjs",
     "build:renderer": "vite build",
@@ -16,7 +16,7 @@
     "dist:mac": "pnpm run build:all && electron-builder --mac",
     "dist:win": "pnpm run build:all && electron-builder --win",
     "dist:linux": "pnpm run build:all && electron-builder --linux",
-    "start": "electron dist/main/index.js",
+    "start": "electron dist/main/interfaces/app/src/main/index.js",
     "watch": "tsc --watch",
     "typecheck": "tsc --noEmit -p tsconfig.main.json",
     "clean": "rm -rf dist node_modules"

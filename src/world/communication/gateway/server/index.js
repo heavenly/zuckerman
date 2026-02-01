@@ -7,7 +7,14 @@ import { initializeChannels } from "@world/communication/messengers/channels/fac
 import { loadConfig } from "@world/config/index.js";
 import { AgentRuntimeFactory } from "@world/runtime/agents/index.js";
 import { SimpleRouter } from "@world/communication/routing/index.js";
+import { appendFileSync } from "node:fs";
 export async function startGatewayServer(options = {}) {
+    // #region agent log
+    try {
+        appendFileSync('/Users/dvirdaniel/Desktop/zuckerman/.cursor/debug.log', JSON.stringify({ location: 'gateway/server/index.ts:19', message: 'startGatewayServer called', data: { port: options.port, host: options.host }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'H' }) + '\n');
+    }
+    catch (e) { }
+    // #endregion
     const port = options.port ?? 18789;
     const host = options.host ?? "127.0.0.1";
     const httpServer = createServer();
@@ -25,7 +32,19 @@ export async function startGatewayServer(options = {}) {
         });
     };
     // Initialize channels
+    // #region agent log
+    try {
+        appendFileSync('/Users/dvirdaniel/Desktop/zuckerman/.cursor/debug.log', JSON.stringify({ location: 'gateway/server/index.ts:42', message: 'Loading config', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'H' }) + '\n');
+    }
+    catch (e) { }
+    // #endregion
     const config = await loadConfig();
+    // #region agent log
+    try {
+        appendFileSync('/Users/dvirdaniel/Desktop/zuckerman/.cursor/debug.log', JSON.stringify({ location: 'gateway/server/index.ts:44', message: 'Config loaded, initializing channels', data: { agentsCount: config.agents?.list?.length || 0 }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'H' }) + '\n');
+    }
+    catch (e) { }
+    // #endregion
     const agentFactory = new AgentRuntimeFactory();
     // Router will get session managers from factory per agent
     const router = new SimpleRouter(agentFactory);
@@ -34,7 +53,19 @@ export async function startGatewayServer(options = {}) {
     const defaultSessionManager = agentFactory.getSessionManager(defaultAgentId);
     const channelRegistry = await initializeChannels(config, router, defaultSessionManager, agentFactory, broadcastEvent);
     // Start enabled channels
+    // #region agent log
+    try {
+        appendFileSync('/Users/dvirdaniel/Desktop/zuckerman/.cursor/debug.log', JSON.stringify({ location: 'gateway/server/index.ts:60', message: 'Starting channels', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'H' }) + '\n');
+    }
+    catch (e) { }
+    // #endregion
     await channelRegistry.startAll();
+    // #region agent log
+    try {
+        appendFileSync('/Users/dvirdaniel/Desktop/zuckerman/.cursor/debug.log', JSON.stringify({ location: 'gateway/server/index.ts:60', message: 'Channels started, setting up HTTP server', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'H' }) + '\n');
+    }
+    catch (e) { }
+    // #endregion
     const handlers = createCoreHandlers({
         sessionManager: defaultSessionManager,
         agentFactory,
@@ -73,10 +104,29 @@ export async function startGatewayServer(options = {}) {
     return new Promise((resolve, reject) => {
         // Set up error handler BEFORE calling listen() to catch EADDRINUSE errors
         httpServer.on("error", (err) => {
+            // #region agent log
+            try {
+                appendFileSync('/Users/dvirdaniel/Desktop/zuckerman/.cursor/debug.log', JSON.stringify({ location: 'gateway/server/index.ts:116', message: 'HTTP server error', data: { error: err.message, code: err.code }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run2', hypothesisId: 'H' }) + '\n');
+            }
+            catch (e) {
+                console.error('[DEBUG] Failed to write log:', e);
+            }
+            // #endregion
             reject(err);
         });
-        
+        // #region agent log
+        try {
+            appendFileSync('/Users/dvirdaniel/Desktop/zuckerman/.cursor/debug.log', JSON.stringify({ location: 'gateway/server/index.ts:101', message: 'Calling httpServer.listen', data: { host, port }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'H' }) + '\n');
+        }
+        catch (e) { }
+        // #endregion
         httpServer.listen(port, host, () => {
+            // #region agent log
+            try {
+                appendFileSync('/Users/dvirdaniel/Desktop/zuckerman/.cursor/debug.log', JSON.stringify({ location: 'gateway/server/index.ts:102', message: 'HTTP server listening callback', data: { host, port }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'H' }) + '\n');
+            }
+            catch (e) { }
+            // #endregion
             console.log(`[Gateway] Server listening on ws://${host}:${port}`);
             resolve({
                 close: async (reason) => {

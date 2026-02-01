@@ -25,6 +25,9 @@ export interface ElectronAPI {
   // API Key management
   getApiKeys: () => Promise<{ anthropic?: string; openai?: string; openrouter?: string }>;
   saveApiKeys: (keys: { anthropic?: string; openai?: string; openrouter?: string }) => Promise<{ success: boolean; error?: string }>;
+  
+  // Calendar events
+  getCalendarEvents: () => Promise<{ events: Array<any>; error?: string }>;
 }
 
 export interface PlatformInfo {
@@ -40,8 +43,11 @@ export interface ElectronTrafficLights {
 
 declare global {
   interface Window {
-    electronAPI: ElectronAPI;
+    electronAPI?: ElectronAPI;
     platform?: PlatformInfo;
     electronTrafficLights?: ElectronTrafficLights;
+    process?: {
+      type?: string;
+    };
   }
 }

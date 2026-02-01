@@ -40,7 +40,13 @@ export const APP_CONFIG = {
   },
   
   paths: {
-    preload: (dirname: string) => join(dirname, "preload.cjs"),
+    preload: (dirname: string) => {
+      // The dirname passed is the directory of the compiled index.js
+      // which is nested like: dist/main/interfaces/app/src/main
+      // But preload.cjs is at: dist/main/preload.cjs
+      // So we need to go up 4 levels to get to dist/main
+      return join(dirname, "..", "..", "..", "..", "preload.cjs");
+    },
     renderer: (dirname: string) => join(dirname, "..", "dist", "renderer", "index.html"),
   },
 } as const;
