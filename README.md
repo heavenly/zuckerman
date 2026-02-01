@@ -62,3 +62,10 @@ pnpm install
 
 # Launch the Electron app (recommended for beginners)
 pnpm run dev
+```
+
+## Easy Onboarding
+
+<div align="center">
+  <img src="company/design/onboarding.min.webp" alt="Easy Onboarding" width="800"/>
+</div>
