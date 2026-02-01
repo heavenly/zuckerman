@@ -1,10 +1,11 @@
-import { app, BrowserWindow, Menu } from "electron";
+import { app, BrowserWindow, Menu, nativeImage } from "electron";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { windowManager } from "@main/window.js";
 import { createApplicationMenu } from "@main/menu.js";
 import { setupIpcHandlers } from "@main/ipc.js";
 import { cleanupGateway } from "@core/gateway/gateway-manager.js";
+import { APP_CONFIG } from "@main/config.js";
 
 // Handle uncaught exceptions and unhandled promise rejections FIRST
 // This must be set up before any other code that might throw errors
@@ -44,6 +45,15 @@ const __dirname = dirname(__filename);
 
 // Setup IPC handlers
 setupIpcHandlers();
+
+// Set dock icon immediately when app is ready (before creating window)
+app.once("ready", () => {
+  if (process.platform === "darwin") {
+    try {
+      app.dock?.setIcon(nativeImage.createFromPath(APP_CONFIG.paths.asset("assets/logo.png")));
+    } catch {}
+  }
+});
 
 // Create window when app is ready
 app.whenReady().then(() => {

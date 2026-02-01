@@ -48,5 +48,14 @@ export const APP_CONFIG = {
       return join(dirname, "..", "..", "..", "..", "preload.cjs");
     },
     renderer: (dirname: string) => join(dirname, "..", "dist", "renderer", "index.html"),
+    asset: (assetPath: string) => {
+      // Simple asset resolver: "assets/logo.png" -> full path
+      // In dev: process.cwd() is src/interfaces/app, assets are at src/assets/logo.png
+      // In prod: assets are copied to app.getAppPath()/assets/logo.png
+      if (app.isPackaged) {
+        return join(app.getAppPath(), assetPath);
+      }
+      return join(process.cwd(), "src", assetPath);
+    },
   },
 } as const;

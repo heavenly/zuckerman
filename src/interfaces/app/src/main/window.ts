@@ -1,11 +1,14 @@
 import { BrowserWindow, BrowserWindowConstructorOptions } from "electron";
-import { join } from "node:path";
 import { APP_CONFIG } from "@main/config.js";
 
 export class WindowManager {
   private mainWindow: BrowserWindow | null = null;
 
   createWindow(dirname: string): BrowserWindow {
+    const iconPath = process.platform !== "darwin" 
+      ? APP_CONFIG.paths.asset("assets/logo.png")
+      : undefined;
+    
     const options: BrowserWindowConstructorOptions = {
       width: APP_CONFIG.window.width,
       height: APP_CONFIG.window.height,
@@ -14,6 +17,7 @@ export class WindowManager {
       titleBarStyle: "hiddenInset",
       backgroundColor: APP_CONFIG.window.backgroundColor,
       frame: true,
+      ...(iconPath && { icon: iconPath }),
       titleBarOverlay: process.platform === "darwin" ? false : {
         color: APP_CONFIG.window.backgroundColor,
         symbolColor: "#ffffff",
