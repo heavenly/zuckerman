@@ -24,6 +24,22 @@ A three-layer architecture for AI agents:
 
 Everything is configured via text files and applies instantly.
 
+## Quick Start
+
+```bash
+# Install dependencies
+pnpm install
+
+# Run the Electron app
+pnpm run dev
+```
+
+This will:
+1. Install all dependencies (including Electron)
+2. Build the main process TypeScript
+3. Start Vite dev server for the renderer
+4. Launch Electron app automatically
+
 ## Architecture
 
 ```
