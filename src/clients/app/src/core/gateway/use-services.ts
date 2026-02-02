@@ -15,11 +15,6 @@ export function useConversationService() {
   );
 }
 
-// Backward compatibility alias
-export function useSessionService() {
-  return useConversationService();
-}
-
 export function useMessageService() {
   const { gatewayClient, serviceRegistry } = useGatewayContext();
   return useMemo(

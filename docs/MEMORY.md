@@ -54,7 +54,7 @@
           │
           ▼
 ┌─────────────────────────────────────────┐
-│  Session Manager                       │
+│  Conversation Manager                   │
 │  └─→ Save to transcript (.jsonl)       │
 └─────────┬───────────────────────────────┘
           │
@@ -135,7 +135,7 @@ Context Window Usage
 │              MEMORY LIFECYCLE (Full Cycle)                   │
 └─────────────────────────────────────────────────────────────┘
 
-Session Start
+Conversation Start
     │
     ├─→ Load MEMORY.md
     ├─→ Load memory/YYYY-MM-DD.md (today)
@@ -161,6 +161,6 @@ Session Start
             └─→ Long-term (MEMORY.md)
                     │
                     ▼
-    Next Session
+    Next Conversation
             └─→ Loads updated memories
 ```

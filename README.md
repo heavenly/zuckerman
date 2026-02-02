@@ -38,7 +38,7 @@ You get an approachable, customizable agent that literally grows by rewriting it
 - **Multiple agents** — run several with unique personalities/tools
 - **Dual interfaces** — CLI (power users) + Electron app (visual)
 - **Calendar & scheduling** — built-in time management
-- **Activity view** — comprehensive timeline tracking of agent runs, tool calls, sessions, messages, and calendar events with filtering and detailed metadata
+- **Activity view** — comprehensive timeline tracking of agent runs, tool calls, conversations, messages, and calendar events with filtering and detailed metadata
 
 ## Architecture (Three Layers)
 
@@ -48,7 +48,7 @@ Everything is plain-text configurable and instantly reloadable.
   Communication (messengers, gateway), Execution (processes, security), Runtime (agent factory), Config loader, Voice, System utils
 
 - **Agents** (`src/server/agents/`) — self-contained agent definitions  
-  Each folder = one agent (core modules, tools, sessions, personality)
+  Each folder = one agent (core modules, tools, conversations, personality)
 
 - **Interfaces** (`src/clients/`) — how you talk to it  
   CLI + Electron/React app (chat, inspector, settings, onboarding)
