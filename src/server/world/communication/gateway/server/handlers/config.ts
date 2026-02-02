@@ -176,7 +176,12 @@ export function createConfigHandlers(): Partial<GatewayRequestHandlers> {
 
             const models =
               data.data
-                ?.map((model) => ({
+                ?.filter((model) => {
+                  // Filter out non-text models (TTS, image generation, etc.)
+                  const id = model.id.toLowerCase();
+                  return !id.includes("tts") && !id.includes("audio") && !id.includes("whisper");
+                })
+                .map((model) => ({
                   id: model.id,
                   name: model.display_name || model.id,
                   createdAt: model.created_at || extractDateFromId(model.id),
@@ -287,12 +292,49 @@ export function createConfigHandlers(): Partial<GatewayRequestHandlers> {
                 name?: string;
                 description?: string;
                 created?: number;
+                context_length?: number;
+                architecture?: {
+                  modality?: string;
+                  tokenizer?: string;
+                  instruct_type?: string;
+                };
+                top_provider?: {
+                  max_completion_tokens?: number;
+                };
+                per_request_limits?: {
+                  prompt_tokens?: string;
+                  completion_tokens?: string;
+                };
               }>;
             };
 
             const models =
               data.data
-                ?.map((model) => ({
+                ?.filter((model) => {
+                  // Filter out non-text models
+                  const id = model.id.toLowerCase();
+                  const description = (model.description || "").toLowerCase();
+                  
+                  // Exclude TTS, audio, image generation, and other non-text models
+                  if (
+                    id.includes("tts") ||
+                    id.includes("audio") ||
+                    id.includes("whisper") ||
+                    id.includes("image") ||
+                    id.includes("vision") && !id.includes("text") ||
+                    description.includes("text-to-speech") ||
+                    description.includes("image generation") ||
+                    description.includes("audio generation")
+                  ) {
+                    return false;
+                  }
+                  
+                  // Include models that are clearly text-based
+                  // Most chat/completion models don't have explicit modality, so we include by default
+                  // and filter out the known non-text ones above
+                  return true;
+                })
+                .map((model) => ({
                   id: model.id,
                   name: model.name || model.id,
                   createdAt: model.created ? new Date(model.created * 1000).toISOString() : extractDateFromId(model.id),

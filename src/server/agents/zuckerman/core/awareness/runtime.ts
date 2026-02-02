@@ -320,7 +320,7 @@ export class ZuckermanAwareness implements AgentRuntime {
     toolCalls: any[];
     securityContext?: any;
     stream?: StreamCallback;
-    model?: string;
+    model?: LLMModel;
     temperature?: number;
     llmTools: LLMTool[];
   }): Promise<AgentRunResult> {
