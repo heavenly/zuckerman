@@ -293,13 +293,13 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
   };
 
   const getActivityBgColor = (type: string): string => {
-    if (type === "agent.run.complete") return "bg-green-100 dark:bg-green-900/20";
-    if (type === "agent.run.error") return "bg-red-100 dark:bg-red-900/20";
-    if (type === "agent.run") return "bg-blue-100 dark:bg-blue-900/20";
-    if (type.startsWith("tool.")) return "bg-purple-100 dark:bg-purple-900/20";
-    if (type.startsWith("conversation.")) return "bg-orange-100 dark:bg-orange-900/20";
-    if (type.startsWith("channel.")) return "bg-cyan-100 dark:bg-cyan-900/20";
-    if (type.startsWith("calendar.")) return "bg-pink-100 dark:bg-pink-900/20";
+    if (type === "agent.run.complete") return "bg-green-100 dark:bg-green-900";
+    if (type === "agent.run.error") return "bg-red-100 dark:bg-red-900";
+    if (type === "agent.run") return "bg-blue-100 dark:bg-blue-900";
+    if (type.startsWith("tool.")) return "bg-purple-100 dark:bg-purple-900";
+    if (type.startsWith("conversation.")) return "bg-orange-100 dark:bg-orange-900";
+    if (type.startsWith("channel.")) return "bg-cyan-100 dark:bg-cyan-900";
+    if (type.startsWith("calendar.")) return "bg-pink-100 dark:bg-pink-900";
     return "bg-muted";
   };
 
@@ -841,7 +841,7 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
                               return (
                                 <div key={activity.id} className="relative group">
                                   {/* Timeline dot */}
-                                  <div className={`absolute -left-8 top-1.5 w-3 h-3 rounded-full border-2 border-background ${getActivityBgColor(activity.type)} flex items-center justify-center`}>
+                                  <div className={`absolute -left-[37px] top-1.5 w-3 h-3 rounded-full border-2 border-background ${getActivityBgColor(activity.type)} flex items-center justify-center`}>
                                     <div className={`w-1.5 h-1.5 rounded-full ${getActivityColor(activity.type)}`} />
                                   </div>
                                   
