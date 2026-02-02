@@ -26,7 +26,6 @@ export class WhatsAppChannelService {
       qr?: string | null;
       channelId: string;
     }>) => {
-      console.log("[WhatsAppChannelService] Received whatsapp-status event:", e.detail.status, e.detail.qr ? "with QR" : "no QR");
       if (e.detail.channelId === "whatsapp") {
         this.eventListeners.status?.({
           status: e.detail.status,

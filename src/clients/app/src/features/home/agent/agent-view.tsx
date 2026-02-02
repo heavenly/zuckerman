@@ -208,12 +208,15 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
 
       const response = await gatewayClient.request("activities.list", params);
       if (response.ok && response.result) {
-        const result = response.result as { activities: ActivityItem[]; count: number };
-        setActivities(result.activities || []);
+        const result = response.result as { activities?: ActivityItem[]; count?: number };
+        const activities = result.activities || [];
+        setActivities(activities);
         setActivitiesError(null);
       } else {
-        setActivitiesError(response.error?.message || "Failed to load activities");
+        const errorMsg = response.error?.message || "Failed to load activities";
+        setActivitiesError(errorMsg);
         console.error("[AgentView] Failed to load activities:", response.error);
+        setActivities([]);
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Failed to load activities";

@@ -27,12 +27,18 @@ function getDateRange(from: number, to: number): string[] {
   const fromDate = new Date(from);
   const toDate = new Date(to);
   
+  // Start from the beginning of the from date (local time, converted to UTC)
   const current = new Date(fromDate);
-  current.setHours(0, 0, 0, 0);
+  current.setUTCHours(0, 0, 0, 0);
   
-  while (current <= toDate) {
+  // End at the beginning of the to date (local time, converted to UTC), then add one day to include the to date
+  const endDate = new Date(toDate);
+  endDate.setUTCHours(0, 0, 0, 0);
+  endDate.setUTCDate(endDate.getUTCDate() + 1); // Include the day of 'to'
+  
+  while (current < endDate) {
     dates.push(getDateString(current.getTime()));
-    current.setDate(current.getDate() + 1);
+    current.setUTCDate(current.getUTCDate() + 1);
   }
   
   return dates;

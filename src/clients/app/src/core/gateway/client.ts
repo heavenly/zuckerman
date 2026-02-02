@@ -101,8 +101,6 @@ export class GatewayClient {
                 // For now, we'll just acknowledge the challenge
                 // In a full implementation, we'd send a connect request here
                 console.debug("Received connect.challenge");
-              } else {
-                console.log(`[GatewayClient] Received event: ${eventData.event}`, eventData.payload ? "with payload" : "no payload");
               }
               this.options.onEvent?.(eventData);
               // Notify all event listeners

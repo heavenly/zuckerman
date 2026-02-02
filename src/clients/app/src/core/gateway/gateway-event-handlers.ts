@@ -23,7 +23,6 @@ export class GatewayEventHandlers {
             qr?: string | null;
             channelId: string;
           };
-          console.log("[GatewayEventHandlers] Dispatching whatsapp-status event:", payload.status, payload.qr ? "with QR" : "no QR");
           window.dispatchEvent(new CustomEvent("whatsapp-status", { detail: payload }));
         } else if (event.event === "channel.telegram.status" && event.payload) {
           const payload = event.payload as {
