@@ -38,6 +38,7 @@ You get an approachable, customizable agent that literally grows by rewriting it
 - **Multiple agents** — run several with unique personalities/tools
 - **Dual interfaces** — CLI (power users) + Electron app (visual)
 - **Calendar & scheduling** — built-in time management
+- **Activity view** — comprehensive timeline tracking of agent runs, tool calls, sessions, messages, and calendar events with filtering and detailed metadata
 
 ## Architecture (Three Layers)
 
