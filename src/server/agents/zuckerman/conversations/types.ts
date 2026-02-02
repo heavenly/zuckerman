@@ -71,8 +71,10 @@ export interface ConversationEntry {
   temperatureOverride?: number;
   timeoutSecondsOverride?: number; // Per-conversation timeout override
   lastTranscriptId?: string; // Track last written transcript entry to prevent duplicates
-  memoryFlushCount?: number; // Track number of memory flushes for this conversation
-  memoryFlushAt?: number; // Timestamp of last memory flush
+  memoryFlushCount?: number; // Track number of memory flushes for this conversation (deprecated, use sleepCount)
+  memoryFlushAt?: number; // Timestamp of last memory flush (deprecated, use sleepAt)
+  sleepCount?: number; // Track number of sleep mode runs for this conversation
+  sleepAt?: number; // Timestamp of last sleep mode run
 }
 
 /**

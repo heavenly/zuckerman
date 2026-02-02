@@ -263,6 +263,18 @@ export interface AgentConfig {
     prompt?: string;
     systemPrompt?: string;
     reserveTokensFloor?: number;
+  }; // Deprecated: use sleep instead
+  sleep?: {
+    enabled?: boolean;
+    threshold?: number; // Default: 0.8 (80%)
+    cooldownMinutes?: number; // Default: 5
+    minMessagesToSleep?: number; // Default: 10
+    keepRecentMessages?: number; // Default: 10
+    compressionStrategy?: "sliding-window" | "progressive-summary" | "importance-based" | "semantic-chunks" | "hybrid";
+    prompt?: string;
+    systemPrompt?: string;
+    reserveTokensFloor?: number;
+    softThresholdTokens?: number;
   };
   memorySearch?: unknown; // Memory search config (defined in memory/config.ts)
   contextTokens?: number;

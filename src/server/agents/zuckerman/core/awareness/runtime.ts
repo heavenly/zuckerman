@@ -18,7 +18,7 @@ import {
   loadMemoryForConversation,
   formatMemoryForPrompt,
 } from "@server/agents/zuckerman/core/memory/storage/persistence.js";
-import { runMemoryFlushIfNeeded } from "@server/agents/zuckerman/core/memory/flush-runner.js";
+import { runSleepModeIfNeeded } from "@server/agents/zuckerman/sleep/index.js";
 import { activityRecorder } from "@server/world/activity/index.js";
 
 export class ZuckermanAwareness implements AgentRuntime {
@@ -116,15 +116,15 @@ export class ZuckermanAwareness implements AgentRuntime {
       // Resolve land directory
       const landDir = resolveAgentLandDir(config, this.agentId);
 
-      // Check if memory flush is needed before processing the message
-      // This runs a special agent turn to save memories if context window is getting full
-      const modelForFlush = model || selectModel(provider, config);
-      await runMemoryFlushIfNeeded({
+      // Check if sleep mode is needed before processing the message
+      // This processes and consolidates memories if context window is getting full
+      const modelForSleep = model || selectModel(provider, config);
+      await runSleepModeIfNeeded({
         config,
         runtime: this,
         conversationManager: this.conversationManager,
         conversationId,
-        modelId: modelForFlush?.id,
+        modelId: modelForSleep?.id,
         agentId: this.agentId,
         landDir,
       });

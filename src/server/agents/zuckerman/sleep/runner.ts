@@ -1,0 +1,125 @@
+/**
+ * Sleep mode runner - executes sleep mode processing
+ */
+
+import type { AgentRuntime } from "@server/world/runtime/agents/types.js";
+import type { ConversationManager } from "../conversations/manager.js";
+import { deriveConversationKey } from "../conversations/manager.js";
+import { loadConversationStore } from "../conversations/store.js";
+import type { ConversationEntry } from "../conversations/types.js";
+import type { ZuckermanConfig } from "@server/world/config/types.js";
+import { resolveSleepConfig } from "./config.js";
+import { shouldSleep, resolveSleepContextWindowTokens } from "./trigger.js";
+import { processConversation } from "./processor.js";
+import { consolidateMemories, formatMemoriesForDailyLog, formatMemoriesForLongTerm } from "./consolidator.js";
+import { appendDailyMemory, updateLongTermMemory, appendLongTermMemory } from "../core/memory/storage/persistence.js";
+
+/**
+ * Run sleep mode if needed
+ */
+export async function runSleepModeIfNeeded(params: {
+  config: ZuckermanConfig;
+  runtime: AgentRuntime;
+  conversationManager: ConversationManager;
+  conversationId: string;
+  modelId?: string;
+  agentId: string;
+  landDir: string;
+}): Promise<ConversationEntry | undefined> {
+  const { config, runtime, conversationManager, conversationId, modelId, agentId, landDir } = params;
+
+  // Resolve sleep settings
+  const sleepConfig = resolveSleepConfig({
+    sleep: config.agent?.sleep,
+    memoryFlush: config.agent?.memoryFlush, // Support migration from memoryFlush
+  });
+
+  if (!sleepConfig) {
+    return undefined; // Sleep disabled
+  }
+
+  // Get conversation entry to check token counts
+  const conversation = conversationManager.getConversation(conversationId);
+  if (!conversation) {
+    return undefined;
+  }
+
+  const conversationKey = deriveConversationKey(agentId, conversation.conversation.type, conversation.conversation.label);
+  const storePath = conversationManager.getStorePath();
+  const store = loadConversationStore(storePath);
+  const entry = store[conversationKey];
+
+  // Check if sleep should run
+  const contextWindowTokens = resolveSleepContextWindowTokens({
+    modelId,
+    agentCfgContextTokens: config.agent?.contextTokens,
+  });
+
+  const shouldRun = shouldSleep({
+    entry,
+    contextWindowTokens,
+    config: sleepConfig,
+    conversationMessageCount: conversation.messages?.length,
+  });
+
+  if (!shouldRun) {
+    return entry;
+  }
+
+  // Run sleep mode
+  try {
+    // Phase 1: Process conversation
+    // Get recent messages for processing
+    const recentMessages = conversation.messages?.slice(-50) || []; // Last 50 messages
+    
+    // Convert to ContextMessage format
+    const contextMessages = recentMessages.map((msg, idx) => ({
+      role: msg.role as "user" | "assistant" | "system" | "tool",
+      content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
+      timestamp: msg.timestamp || Date.now() - (recentMessages.length - idx) * 1000,
+      tokens: Math.ceil((typeof msg.content === "string" ? msg.content.length : JSON.stringify(msg.content).length) / 4),
+    }));
+
+    const { importantMessages, summary } = processConversation(contextMessages);
+
+    // Phase 2 & 3: Consolidate memories
+    const consolidatedMemories = consolidateMemories(importantMessages, summary);
+
+    // Phase 4: Save using Memory APIs (no duplication)
+    const dailyLogContent = formatMemoriesForDailyLog(consolidatedMemories);
+    const longTermContent = formatMemoriesForLongTerm(consolidatedMemories);
+
+    if (dailyLogContent) {
+      appendDailyMemory(landDir, dailyLogContent);
+    }
+
+    if (longTermContent) {
+      // Check if we should append or update
+      // For now, append to preserve existing content
+      appendLongTermMemory(landDir, longTermContent);
+    }
+
+    // Also run agent with sleep prompt to let it save additional memories using tools
+    await runtime.run({
+      conversationId,
+      message: sleepConfig.prompt,
+      thinkingLevel: "off",
+      temperature: 0.7,
+      model: undefined,
+    });
+
+    // Update conversation entry with sleep metadata
+    const updatedEntry = await conversationManager.updateConversationEntry(conversationId, (current) => ({
+      sleepCount: (current.sleepCount ?? 0) + 1,
+      sleepAt: Date.now(),
+      // Keep memoryFlushCount for backward compatibility during migration
+      memoryFlushCount: (current.memoryFlushCount ?? 0) + 1,
+      memoryFlushAt: Date.now(),
+    }));
+
+    return updatedEntry || entry;
+  } catch (err) {
+    console.warn(`[SleepMode] Sleep mode run failed:`, err);
+    return entry;
+  }
+}

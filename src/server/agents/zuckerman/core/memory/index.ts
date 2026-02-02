@@ -14,19 +14,14 @@ export * from "./storage/files.js"; // File operations
 // Retrieval: How memories are accessed
 export * from "./retrieval/search.js"; // Search interface
 
-// Consolidation: How memories are processed
-export * from "./consolidation/pruning.js"; // Context pruning
-
-// Memory flush: Automatic memory saving
-export * from "./flush.js"; // Memory flush settings and logic
-export * from "./flush-runner.js"; // Memory flush execution
+// Note: Processing/consolidation logic moved to sleep module
+// Note: Memory flush logic moved to sleep module
 
 // Type exports
 export type { MemorySearchManager, MemorySearchResult } from "./retrieval/search.js";
 export type { MemoryFileEntry } from "./storage/files.js";
 export type { MemoryChunk } from "./encoding/chunking.js";
 export type { ResolvedMemorySearchConfig, MemorySearchConfig } from "./config.js";
-export type { ContextPruningConfig, EffectiveContextPruningSettings } from "./consolidation/pruning.js";
 
 // Function exports (matching OpenClaw pattern)
 export { getMemorySearchManager } from "./retrieval/search.js";
