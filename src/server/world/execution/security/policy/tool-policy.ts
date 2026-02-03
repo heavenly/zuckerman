@@ -11,7 +11,6 @@ const TOOL_GROUPS: Record<string, string[]> = {
   "group:ui": ["browser", "canvas"],
   "group:automation": ["cron", "gateway"],
   "group:messaging": ["message"],
-  "group:device": ["device"],
 };
 
 /**

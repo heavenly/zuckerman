@@ -96,7 +96,7 @@ Sleep mode is inspired by human sleep - a period where the agent processes, cons
 │                    MEMORY STORAGE STRUCTURE                  │
 └─────────────────────────────────────────────────────────────┘
 
-{landDir}/
+{homedirDir}/
 ├── MEMORY.md                    ← Long-term memory
 │   └─→ Persistent facts, preferences, important info
 │

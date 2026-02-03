@@ -1,13 +1,13 @@
+import type { Tool } from "../../terminal/index.js";
 import type { SecurityContext } from "@server/world/execution/security/types.js";
 import { isToolAllowed } from "@server/world/execution/security/policy/tool-policy.js";
-import type { Tool, ToolDefinition, ToolResult } from "../terminal/index.js";
-import { convertTTS } from "../voice/tts.js";
+import { convertTextToSpeech } from "./index.js";
 import { loadConfig } from "@server/world/config/index.js";
 
-export function createTtsTool(): Tool {
+export function createTextToSpeechTool(): Tool {
   return {
     definition: {
-      name: "tts",
+      name: "text_to_speech",
       description: "Convert text to speech and return a MEDIA: path. Use when the user requests audio or TTS is enabled. Copy the MEDIA line exactly.",
       parameters: {
         type: "object",
@@ -29,7 +29,7 @@ export function createTtsTool(): Tool {
         required: ["text"],
       },
     },
-    handler: async (params, securityContext, executionContext) => {
+    handler: async (params, securityContext) => {
       try {
         const { text, provider, channel } = params;
 
@@ -42,11 +42,11 @@ export function createTtsTool(): Tool {
 
         // Check tool security
         if (securityContext) {
-          const toolAllowed = isToolAllowed("tts", securityContext.toolPolicy);
+          const toolAllowed = isToolAllowed("text_to_speech", securityContext.toolPolicy);
           if (!toolAllowed) {
             return {
               success: false,
-              error: "TTS tool is not allowed by security policy",
+              error: "Text-to-speech tool is not allowed by security policy",
             };
           }
         }
@@ -55,7 +55,7 @@ export function createTtsTool(): Tool {
         const config = await loadConfig();
 
         // Convert text to speech
-        const result = await convertTTS({
+        const result = await convertTextToSpeech({
           text,
           provider: provider as "openai" | "elevenlabs" | "edge" | undefined,
           config: config.textToSpeech,

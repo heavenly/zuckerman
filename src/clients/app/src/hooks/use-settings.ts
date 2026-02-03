@@ -108,7 +108,7 @@ export function useSettings(
   const [isResetting, setIsResetting] = useState(false);
   const [toolRestrictions, setToolRestrictions] = useState<ToolRestrictions>({
     profile: "full",
-    enabledTools: new Set(["terminal", "browser", "cron", "device", "filesystem", "canvas"]),
+    enabledTools: new Set(["terminal", "browser", "cron", "filesystem", "canvas"]),
   });
   const [isLoadingTools, setIsLoadingTools] = useState(false);
 
@@ -258,7 +258,6 @@ export function useSettings(
               enabledTools.add("terminal");
               enabledTools.add("browser");
               enabledTools.add("cron");
-              enabledTools.add("device");
               enabledTools.add("filesystem");
               enabledTools.add("canvas");
             } else if (toolsConfig.allow) {
@@ -521,7 +520,7 @@ export function useSettings(
       newEnabledTools.add(toolId);
     }
 
-    const allTools = ["terminal", "browser", "cron", "device", "filesystem", "canvas"];
+    const allTools = ["terminal", "browser", "cron", "filesystem", "canvas"];
     const allEnabled = allTools.every((tool) => newEnabledTools.has(tool));
 
     const updates: any = {
@@ -554,7 +553,7 @@ export function useSettings(
       return;
     }
 
-    const allTools = ["terminal", "browser", "cron", "device", "filesystem", "canvas"];
+    const allTools = ["terminal", "browser", "cron", "filesystem", "canvas"];
     const updates: any = {
       security: {
         tools: { profile: "full" },

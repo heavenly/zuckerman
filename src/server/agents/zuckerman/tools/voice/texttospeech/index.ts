@@ -5,7 +5,7 @@
  */
 
 import { writeFile, mkdir } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import { homedir } from "node:os";
 import { existsSync } from "node:fs";
 import { openaiTextToSpeech, type OpenAITextToSpeechOptions } from "./providers/openai.js";
@@ -194,3 +194,6 @@ export async function convertTextToSpeech(options: TextToSpeechConvertOptions): 
     voiceCompatible: outputConfig.voiceCompatible,
   };
 }
+
+// Export alias for backward compatibility
+export { convertTextToSpeech as convertTTS };

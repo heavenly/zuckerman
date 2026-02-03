@@ -19,7 +19,6 @@ const TOOL_ICONS: Record<string, React.ReactNode> = {
   browser: <Globe className="h-4 w-4" />,
   canvas: <Palette className="h-4 w-4" />,
   cron: <Clock className="h-4 w-4" />,
-  device: <Cpu className="h-4 w-4" />,
 };
 
 export function AgentStep({

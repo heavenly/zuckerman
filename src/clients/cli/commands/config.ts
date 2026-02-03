@@ -11,7 +11,7 @@ export function createConfigCommand(): Command {
     .command("get")
     .description("Get current configuration")
     .option("--json", "Output as JSON")
-    .option("--key <key>", "Get specific config key (e.g., 'agents.defaults.land')")
+    .option("--key <key>", "Get specific config key (e.g., 'agents.defaults.homedir')")
     .action(async (options: { json?: boolean; key?: string }) => {
       const config = await loadConfig();
 
@@ -44,7 +44,7 @@ export function createConfigCommand(): Command {
   cmd
     .command("set")
     .description("Set configuration value")
-    .option("--key <key>", "Config key to set (e.g., 'agents.defaults.land')")
+    .option("--key <key>", "Config key to set (e.g., 'agents.defaults.homedir')")
     .option("--value <value>", "Value to set (JSON string)")
     .option("--input <json>", "JSON input for full config update (or pipe JSON)")
     .action(async (options: { key?: string; value?: string; input?: string }) => {

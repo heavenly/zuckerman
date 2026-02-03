@@ -19,7 +19,6 @@ const AVAILABLE_TOOLS = [
   { id: "browser", label: "Browser", description: "Web browsing and automation" },
   { id: "filesystem", label: "Filesystem", description: "Read and write files" },
   { id: "cron", label: "Cron", description: "Scheduled tasks" },
-  { id: "device", label: "Device", description: "Device access and control" },
   { id: "canvas", label: "Canvas", description: "UI rendering and interaction" },
 ];
 

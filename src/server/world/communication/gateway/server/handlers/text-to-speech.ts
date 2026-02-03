@@ -1,6 +1,6 @@
 import type { GatewayRequestHandlers } from "../types.js";
 import { loadConfig } from "@server/world/config/index.js";
-import { convertTextToSpeech } from "@server/agents/zuckerman/core/speak/index.js";
+import { convertTextToSpeech } from "@server/agents/zuckerman/tools/voice/texttospeech/index.js";
 import type { TextToSpeechConfig } from "@server/world/config/types.js";
 
 export function createTextToSpeechHandlers(): Partial<GatewayRequestHandlers> {

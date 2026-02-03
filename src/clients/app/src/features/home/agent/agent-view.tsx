@@ -46,7 +46,6 @@ const TOOL_ICONS: Record<string, React.ReactNode> = {
   browser: <Globe className="h-4 w-4" />,
   canvas: <Palette className="h-4 w-4" />,
   cron: <Clock className="h-4 w-4" />,
-  device: <Cpu className="h-4 w-4" />,
   tts: <Sparkles className="h-4 w-4" />,
 };
 
@@ -55,7 +54,6 @@ const TOOL_DESCRIPTIONS: Record<string, string> = {
   browser: "Automate web browsing and interactions",
   canvas: "Perform canvas operations and image manipulation",
   cron: "Schedule and manage recurring tasks",
-  device: "Access device capabilities and sensors",
   tts: "Text-to-speech synthesis",
 };
 
@@ -420,7 +418,7 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
     .sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0));
 
   // Common tools list (based on project structure)
-  const commonTools = ["terminal", "browser", "canvas", "cron", "device", "tts"];
+  const commonTools = ["terminal", "browser", "canvas", "cron", "tts"];
 
   const handleRunAgent = () => {
     if (state.currentAgentId !== agentId) {

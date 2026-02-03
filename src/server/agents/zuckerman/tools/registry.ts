@@ -2,7 +2,6 @@ import type { Tool } from "./terminal/index.js";
 import { createTerminalTool } from "./terminal/index.js";
 import { createBrowserTool } from "./browser/index.js";
 import { createCronTool } from "./cron/index.js";
-import { createDeviceTool } from "./device/index.js";
 import { createMultiEditTool } from "./multiedit/index.js";
 import { createBatchTool, type BatchExecutionContext } from "./batch/index.js";
 import { createWhatsAppTool } from "./channels/whatsapp.js";
@@ -10,6 +9,8 @@ import { createTelegramTool } from "./channels/telegram.js";
 import { createDiscordTool } from "./channels/discord.js";
 import { createSignalTool } from "./channels/signal.js";
 import { createMemorySearchTool, createMemoryGetTool, createMemorySaveTool, createMemoryUpdateTool } from "./memory/index.js";
+import { createTextToSpeechTool } from "./voice/texttospeech/tool.js";
+import { createSpeechToTextTool } from "./voice/speechtotext/tool.js";
 
 export class ZuckermanToolRegistry {
   private tools = new Map<string, Tool>();
@@ -22,7 +23,6 @@ export class ZuckermanToolRegistry {
     this.register(createTerminalTool());
     this.register(createBrowserTool());
     this.register(createCronTool());
-    this.register(createDeviceTool());
     this.register(createMultiEditTool());
     this.register(createWhatsAppTool());
     this.register(createTelegramTool());
@@ -32,6 +32,8 @@ export class ZuckermanToolRegistry {
     this.register(createMemoryGetTool());
     this.register(createMemorySaveTool());
     this.register(createMemoryUpdateTool());
+    this.register(createTextToSpeechTool());
+    this.register(createSpeechToTextTool());
     
     // Register batch tool with execution context
     this.registerBatchTool();

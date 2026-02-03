@@ -25,7 +25,6 @@ Available tools include:
 - Terminal commands
 - Browser automation (navigate, snapshots, screenshots, interaction)
 - Cron scheduling
-- Device capabilities (notifications, system commands)
 - And more...
 
 **Use tools proactively and iteratively to complete tasks end-to-end.**
