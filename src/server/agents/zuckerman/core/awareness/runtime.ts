@@ -9,7 +9,7 @@ import type { ToolExecutionContext } from "@server/agents/zuckerman/tools/termin
 import { truncateOutput } from "@server/agents/zuckerman/tools/truncation.js";
 import { LLMProviderService } from "@server/world/providers/llm/service/selector.js";
 import { selectModel } from "@server/world/providers/llm/service/model-selector.js";
-import { PromptLoader, type LoadedPrompts } from "../personality/personality-loader.js";
+import { PromptLoader, type LoadedPrompts } from "../identity/identity-loader.js";
 import { agentDiscovery } from "@server/agents/discovery.js";
 import {
   resolveAgentHomedirDir,
@@ -17,7 +17,7 @@ import {
 import {
   loadMemoryForConversation,
   formatMemoryForPrompt,
-} from "@server/agents/zuckerman/core/memory/storage/persistence.js";
+} from "@server/agents/zuckerman/core/memory/services/storage/persistence.js";
 import { runSleepModeIfNeeded } from "@server/agents/zuckerman/sleep/index.js";
 import { activityRecorder } from "@server/world/activity/index.js";
 

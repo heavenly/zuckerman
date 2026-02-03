@@ -472,7 +472,7 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
               </div>
               <p className="text-sm text-muted-foreground">
                 {activeTab === "overview" && "Agent overview and quick actions"}
-                {activeTab === "prompts" && "System prompts, behavior, and personality"}
+                {activeTab === "prompts" && "System prompts, behavior, and identity"}
                 {activeTab === "tools" && "Available tools and capabilities"}
                 {activeTab === "conversations" && "Active and archived conversations"}
                 {activeTab === "activities" && "Agent activity logs and history"}

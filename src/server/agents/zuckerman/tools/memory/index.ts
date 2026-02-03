@@ -3,12 +3,12 @@ import type { ToolExecutionContext } from "../terminal/index.js";
 import { loadConfig } from "@server/world/config/index.js";
 import { resolveAgentHomedirDir } from "@server/world/homedir/resolver.js";
 import { resolveMemorySearchConfig } from "@server/agents/zuckerman/core/memory/config.js";
-import { getMemorySearchManager } from "@server/agents/zuckerman/core/memory/retrieval/search.js";
+import { getMemorySearchManager } from "@server/agents/zuckerman/core/memory/services/retrieval/search.js";
 import {
   appendDailyMemory,
   appendLongTermMemory,
   updateLongTermMemory,
-} from "@server/agents/zuckerman/core/memory/storage/persistence.js";
+} from "@server/agents/zuckerman/core/memory/services/storage/persistence.js";
 
 /**
  * Create memory search tool

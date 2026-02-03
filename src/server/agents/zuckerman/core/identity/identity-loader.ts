@@ -23,18 +23,18 @@ export class PromptLoader {
     }
 
     const coreDir = join(agentDir, "core");
-    const personalityDir = join(coreDir, "personality");
+    const identityDir = join(coreDir, "identity");
     const prompts: LoadedPrompts = {
       files: new Map(),
     };
 
-    // Load all markdown files from personality directory
+    // Load all markdown files from identity directory
     try {
-      if (existsSync(personalityDir)) {
-        const files = await readdir(personalityDir);
+      if (existsSync(identityDir)) {
+        const files = await readdir(identityDir);
         for (const file of files) {
           if (file.endsWith(".md")) {
-            const filePath = join(personalityDir, file);
+            const filePath = join(identityDir, file);
             try {
               const content = await readFile(filePath, "utf-8");
               const fileName = file.replace(".md", "");
@@ -46,7 +46,7 @@ export class PromptLoader {
         }
       }
     } catch (err) {
-      console.warn(`[PromptLoader] Failed to read personality directory:`, err);
+      console.warn(`[PromptLoader] Failed to read identity directory:`, err);
     }
 
     this.promptCache.set(agentDir, prompts);

@@ -7,15 +7,15 @@ describe("ZuckermanRuntime", () => {
   it("should load prompts for zuckerman agent", async () => {
     const prompts = await runtime.loadPrompts();
     expect(prompts).not.toBeNull();
-    expect(prompts?.system).toBeDefined();
-    expect(prompts?.personality).toBeDefined();
-    expect(prompts?.behavior).toBeDefined();
+    expect(prompts?.files).toBeDefined();
+    expect(prompts?.files?.get("identity")).toBeDefined();
+    expect(prompts?.files?.get("behavior")).toBeDefined();
   });
 
   it("should load prompts for zuckerman", async () => {
     const prompts = await runtime.loadPrompts();
     expect(prompts).toBeDefined();
-    expect(prompts.system).toBeDefined();
+    expect(prompts.files).toBeDefined();
   });
 
   it("should run an agent", async () => {

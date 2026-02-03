@@ -52,7 +52,7 @@ Everything is plain-text configurable and instantly reloadable.
   Communication (messengers, gateway), Execution (processes, security), Runtime (agent factory), Config loader, Voice, System utils
 
 - **Agents** (`src/server/agents/`) — self-contained agent definitions  
-  Each folder = one agent (core modules, tools, conversations, personality)
+  Each folder = one agent (core modules, tools, conversations, identity)
 
 - **Interfaces** (`src/clients/`) — how you talk to it  
   CLI + Electron/React app (chat, inspector, settings, onboarding)

@@ -315,11 +315,11 @@ export function createAgentHandlers(
           return;
         }
         const agentDir = metadata.agentDir;
-        const personalityDir = join(agentDir, "core", "personality");
+        const identityDir = join(agentDir, "core", "identity");
         
         // Ensure fileName ends with .md
         const fileWithExt = fileName.endsWith(".md") ? fileName : `${fileName}.md`;
-        const filePath = join(personalityDir, fileWithExt);
+        const filePath = join(identityDir, fileWithExt);
 
         // Write file
         await writeFile(filePath, content, "utf-8");

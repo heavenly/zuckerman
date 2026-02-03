@@ -4,7 +4,7 @@
  */
 import { ZuckermanAwareness } from "./core/awareness/runtime.js";
 export { ZuckermanAwareness as ZuckermanRuntime, ZuckermanAwareness };
-export type { LoadedPrompts } from "./core/personality/personality-loader.js";
+export type { LoadedPrompts } from "./core/identity/identity-loader.js";
 
 // Default export for easier discovery
 export default ZuckermanAwareness;

@@ -253,10 +253,11 @@ export function createAgentsCommand(): Command {
           agentId: string;
           system?: string;
           behavior?: string;
-          personality?: string;
+          identity?: string;
           instructions?: string;
           fileCount?: number;
           additionalFiles?: string[];
+          files?: Record<string, string>;
         };
 
         if (shouldOutputJson(options)) {
@@ -276,9 +277,13 @@ export function createAgentsCommand(): Command {
             console.log();
           }
           
-          if (result.personality) {
-            console.log("=== Personality ===");
-            console.log(result.personality);
+          if (result.identity) {
+            console.log("=== Identity ===");
+            console.log(result.identity);
+            console.log();
+          } else if (result.files?.identity) {
+            console.log("=== Identity ===");
+            console.log(result.files.identity);
             console.log();
           }
           
@@ -297,7 +302,7 @@ export function createAgentsCommand(): Command {
             console.log(`\n(${result.fileCount} additional prompt file${result.fileCount !== 1 ? "s" : ""})`);
           }
           
-          if (!result.system && !result.behavior && !result.personality && !result.instructions && (!result.additionalFiles || result.additionalFiles.length === 0)) {
+          if (!result.system && !result.behavior && !result.identity && !result.instructions && (!result.additionalFiles || result.additionalFiles.length === 0) && (!result.files || Object.keys(result.files).length === 0)) {
             console.log("No prompts found for this agent.");
           }
         }

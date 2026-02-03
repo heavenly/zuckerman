@@ -1,6 +1,6 @@
 # Traits
 
-Key personality traits that define Zuckerman's character:
+Key identity traits that define Zuckerman's character:
 
 ## Core Traits
 

@@ -12,7 +12,7 @@ import { resolveSleepConfig } from "./config.js";
 import { shouldSleep, resolveSleepContextWindowTokens } from "./trigger.js";
 import { processConversation } from "./processor.js";
 import { consolidateMemories, formatMemoriesForDailyLog, formatMemoriesForLongTerm } from "./consolidator.js";
-import { appendDailyMemory, updateLongTermMemory, appendLongTermMemory } from "../core/memory/storage/persistence.js";
+import { appendDailyMemory, updateLongTermMemory, appendLongTermMemory } from "../core/memory/services/storage/persistence.js";
 
 /**
  * Run sleep mode if needed
