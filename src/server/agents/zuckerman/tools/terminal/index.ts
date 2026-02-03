@@ -29,7 +29,7 @@ export interface ToolResult {
  */
 export interface ToolExecutionContext {
   conversationId: string;
-  landDir?: string; // Workspace/land directory (sandbox path when sandboxed)
+  homedirDir?: string; // Workspace/homedir directory (sandbox path when sandboxed)
   stream?: (event: {
     type: "tool.call" | "tool.result";
     data: {

@@ -1,7 +1,7 @@
 import type { Router, Route } from "./types.js";
 import type { ChannelMessage } from "@server/world/communication/messengers/channels/types.js";
 import { ConversationManager } from "@server/agents/zuckerman/conversations/index.js";
-import { resolveAgentRoute, resolveAgentLand } from "./resolver.js";
+import { resolveAgentRoute, resolveAgentHomedir } from "./resolver.js";
 import { loadConfig } from "@server/world/config/index.js";
 import type { AgentRuntimeFactory } from "@server/world/runtime/agents/index.js";
 
@@ -9,7 +9,7 @@ export interface RoutedMessage {
   conversationId: string;
   agentId: string;
   conversationKey: string;
-  landDir: string;
+  homedirDir: string;
 }
 
 export class SimpleRouter implements Router {
@@ -84,14 +84,14 @@ export class SimpleRouter implements Router {
     const conversationManager = this.getConversationManager(route.agentId);
     const conversation = conversationManager.getOrCreateMainConversation(route.agentId);
     
-    // Resolve land directory
-    const landDir = resolveAgentLand(config, route.agentId);
+    // Resolve homedir directory
+    const homedirDir = resolveAgentHomedir(config, route.agentId);
 
     return {
       conversationId: conversation.id,
       agentId: route.agentId,
       conversationKey: route.conversationKey,
-      landDir,
+      homedirDir,
     };
   }
 }

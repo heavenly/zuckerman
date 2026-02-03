@@ -1,7 +1,7 @@
 /**
- * Text-to-Speech Service
+ * Text-to-Speech (TTS) Service
  * 
- * Unified interface for text-to-speech providers (OpenAI, ElevenLabs, Edge TTS)
+ * Unified interface for TTS providers (OpenAI, ElevenLabs, Edge TTS)
  */
 
 import { writeFile, mkdir } from "node:fs/promises";
@@ -11,18 +11,18 @@ import { existsSync } from "node:fs";
 import { openaiTextToSpeech, type OpenAITextToSpeechOptions } from "./providers/openai.js";
 import { elevenlabsTextToSpeech, type ElevenLabsTextToSpeechOptions } from "./providers/elevenlabs.js";
 import { edgeTextToSpeech, type EdgeTextToSpeechOptions } from "./providers/edge.js";
-import type { TextToSpeechConfig } from "../config/types.js";
+import type { TextToSpeechConfig } from "@server/world/config/types.js";
 
-export type TextToSpeechProvider = "openai" | "elevenlabs" | "edge";
+export type TtsProvider = "openai" | "elevenlabs" | "edge";
 
-export interface TextToSpeechConvertOptions {
+export interface TtsConvertOptions {
   text: string;
-  provider?: TextToSpeechProvider;
+  provider?: TtsProvider;
   config?: TextToSpeechConfig;
   channel?: string; // For channel-specific output formats (e.g., Telegram prefers Opus)
 }
 
-export interface TextToSpeechConvertResult {
+export interface TtsConvertResult {
   success: boolean;
   audioPath?: string;
   error?: string;
@@ -49,9 +49,9 @@ const DEFAULT_OUTPUT = {
 };
 
 /**
- * Resolve text-to-speech provider from config or environment
+ * Resolve TTS provider from config or environment
  */
-function resolveProvider(config?: TextToSpeechConfig): TextToSpeechProvider {
+function resolveProvider(config?: TextToSpeechConfig): TtsProvider {
   if (config?.provider) {
     return config.provider;
   }
@@ -71,7 +71,7 @@ function resolveProvider(config?: TextToSpeechConfig): TextToSpeechProvider {
 /**
  * Convert text to speech and save to file
  */
-export async function convertTextToSpeech(options: TextToSpeechConvertOptions): Promise<TextToSpeechConvertResult> {
+export async function convertTTS(options: TtsConvertOptions): Promise<TtsConvertResult> {
   const { text, provider: requestedProvider, config, channel } = options;
 
   if (!text || text.trim().length === 0) {
@@ -174,7 +174,7 @@ export async function convertTextToSpeech(options: TextToSpeechConvertOptions): 
 
   // Save audio file
   const timestamp = Date.now();
-  const filename = `text-to-speech-${timestamp}${outputConfig.extension}`;
+  const filename = `tts-${timestamp}${outputConfig.extension}`;
   const audioPath = join(AUDIO_DIR, filename);
 
   try {

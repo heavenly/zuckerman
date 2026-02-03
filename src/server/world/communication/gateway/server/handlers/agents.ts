@@ -4,7 +4,7 @@ import { AgentRuntimeFactory } from "@server/world/runtime/agents/index.js";
 import { agentDiscovery } from "@server/agents/discovery.js";
 import { loadConfig } from "@server/world/config/index.js";
 import { resolveSecurityContext } from "@server/world/execution/security/context/index.js";
-import { resolveAgentLand } from "@server/world/communication/routing/resolver.js";
+import { resolveAgentHomedir } from "@server/world/communication/routing/resolver.js";
 import type { StreamEvent } from "@server/world/runtime/agents/types.js";
 import { sendEvent } from "../connection.js";
 import { writeFile } from "node:fs/promises";
@@ -102,14 +102,14 @@ export function createAgentHandlers(
           actualConversationId = newConversation.id; // Use the actual created conversation ID
         }
 
-        // Resolve land directory for this agent
-        const landDir = resolveAgentLand(config, agentId);
+        // Resolve homedir directory for this agent
+        const homedirDir = resolveAgentHomedir(config, agentId);
         const securityContext = await resolveSecurityContext(
           config.security,
           actualConversationId,
           conversation.conversation.type,
           agentId,
-          landDir,
+          homedirDir,
         );
 
         // Add user message to conversation (use actualConversationId, not the original conversationId)

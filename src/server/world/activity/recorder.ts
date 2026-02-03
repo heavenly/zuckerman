@@ -289,6 +289,22 @@ class ActivityRecorder {
       agentId,
     });
   }
+
+  /**
+   * Record awareness queue drained
+   */
+  async recordAwarenessQueueDrained(
+    agentId: string,
+    conversationId: string,
+    itemsProcessed: number,
+  ): Promise<void> {
+    await this.record("awareness.queue.drained", {
+      itemsProcessed,
+    }, {
+      agentId,
+      conversationId,
+    });
+  }
 }
 
 // Singleton instance

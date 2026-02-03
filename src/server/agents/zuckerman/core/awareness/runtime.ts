@@ -12,8 +12,8 @@ import { selectModel } from "@server/agents/zuckerman/core/awareness/providers/s
 import { PromptLoader, type LoadedPrompts } from "../personality/personality-loader.js";
 import { agentDiscovery } from "@server/agents/discovery.js";
 import {
-  resolveAgentLandDir,
-} from "@server/world/land/resolver.js";
+  resolveAgentHomedirDir,
+} from "@server/world/homedir/resolver.js";
 import {
   loadMemoryForConversation,
   formatMemoryForPrompt,
@@ -53,14 +53,14 @@ export class ZuckermanAwareness implements AgentRuntime {
 
   async buildSystemPrompt(
     prompts: LoadedPrompts,
-    landDir?: string,
+    homedirDir?: string,
   ): Promise<string> {
     const basePrompt = this.promptLoader.buildSystemPrompt(prompts);
     const parts: string[] = [basePrompt];
     
     // Add memory (only for main conversations - will be filtered in run method)
-    if (landDir) {
-      const { dailyLogs, longTermMemory } = loadMemoryForConversation(landDir);
+    if (homedirDir) {
+      const { dailyLogs, longTermMemory } = loadMemoryForConversation(homedirDir);
       if (dailyLogs.size > 0 || longTermMemory) {
         const memorySection = formatMemoryForPrompt(dailyLogs, longTermMemory);
         parts.push(memorySection);
@@ -113,8 +113,8 @@ export class ZuckermanAwareness implements AgentRuntime {
       const config = await loadConfig();
       const provider = await this.providerService.selectProvider(config);
 
-      // Resolve land directory
-      const landDir = resolveAgentLandDir(config, this.agentId);
+      // Resolve homedir directory
+      const homedirDir = resolveAgentHomedirDir(config, this.agentId);
 
       // Check if sleep mode is needed before processing the message
       // This processes and consolidates memories if context window is getting full
@@ -126,14 +126,14 @@ export class ZuckermanAwareness implements AgentRuntime {
         conversationId,
         modelId: modelForSleep?.id,
         agentId: this.agentId,
-        landDir,
+        homedirDir,
       });
       
       // Load prompts
       const prompts = await this.loadPrompts();
       
-      // Build system prompt (passing landDir to include memory)
-      const systemPrompt = await this.buildSystemPrompt(prompts, landDir);
+      // Build system prompt (passing homedirDir to include memory)
+      const systemPrompt = await this.buildSystemPrompt(prompts, homedirDir);
 
       // Prepare messages
       const messages: LLMMessage[] = [
@@ -187,7 +187,7 @@ export class ZuckermanAwareness implements AgentRuntime {
           model: selectedModel,
           temperature,
           llmTools,
-          landDir,
+          homedirDir,
         });
       }
 
@@ -364,9 +364,9 @@ export class ZuckermanAwareness implements AgentRuntime {
     model?: LLMModel;
     temperature?: number;
     llmTools: LLMTool[];
-    landDir?: string;
+    homedirDir?: string;
   }): Promise<AgentRunResult> {
-    const { conversationId, runId, messages, toolCalls, securityContext, stream, model, temperature, llmTools, landDir } = params;
+    const { conversationId, runId, messages, toolCalls, securityContext, stream, model, temperature, llmTools, homedirDir } = params;
     
     // Add assistant message with tool calls to history
     messages.push({
@@ -432,7 +432,7 @@ export class ZuckermanAwareness implements AgentRuntime {
         // Create execution context for tool
         const executionContext: ToolExecutionContext = {
           conversationId,
-          landDir,
+          homedirDir,
           stream: stream
             ? (event) => {
                 stream({
@@ -571,7 +571,7 @@ export class ZuckermanAwareness implements AgentRuntime {
         model,
         temperature,
         llmTools,
-        landDir: params.landDir,
+        homedirDir: params.homedirDir,
       });
     }
 

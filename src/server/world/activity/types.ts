@@ -11,7 +11,8 @@ export type ActivityType =
   | "calendar.event.triggered"
   | "calendar.event.created"
   | "calendar.event.updated"
-  | "calendar.event.deleted";
+  | "calendar.event.deleted"
+  | "awareness.queue.drained";
 
 export interface Activity {
   id: string;

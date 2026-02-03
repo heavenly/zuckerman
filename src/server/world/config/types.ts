@@ -8,7 +8,7 @@ export interface AgentEntry {
   id: string;
   default?: boolean;
   name?: string;
-  land?: string;
+  homedir?: string;
   defaultModel?: string;
   defaultProvider?: "anthropic" | "openai" | "openrouter";
   temperature?: number;
@@ -31,7 +31,7 @@ export interface AgentBinding {
 export interface AgentsConfig {
   list?: AgentEntry[];
   defaults?: {
-    land?: string;
+    homedir?: string;
     defaultModel?: string;
     defaultProvider?: "anthropic" | "openai" | "openrouter";
     temperature?: number;

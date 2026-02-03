@@ -1,6 +1,6 @@
 import type { CalendarEvent } from "./types.js";
 import { getCronExecutionContext } from "./execution-context.js";
-import { resolveAgentLandDir } from "@server/world/land/resolver.js";
+import { resolveAgentHomedirDir } from "@server/world/homedir/resolver.js";
 import { loadConfig } from "@server/world/config/index.js";
 import { resolveSecurityContext } from "@server/world/execution/security/context/index.js";
 import { deriveConversationKey } from "@server/agents/zuckerman/conversations/index.js";
@@ -155,13 +155,13 @@ async function executeAgentTurn(event: CalendarEvent, eventsMap: Map<string, Cal
 
   // Load config and resolve security context
   const config = await loadConfig();
-  const landDir = resolveAgentLandDir(config, agentId);
+  const homedirDir = resolveAgentHomedirDir(config, agentId);
   const securityContext = await resolveSecurityContext(
     config.security,
     conversationId,
     conversation.conversation.type,
     agentId,
-    landDir,
+    homedirDir,
   );
 
   // Run agent

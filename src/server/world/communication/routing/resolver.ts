@@ -158,6 +158,6 @@ export function resolveAgentRoute(input: ResolveRouteInput): ResolvedRoute {
   return choose(defaultAgentId, "default");
 }
 
-// Land resolution in world/land/resolver
+// Homedir resolution in world/homedir/resolver
 // Re-export for backward compatibility
-export { resolveAgentLandDir as resolveAgentLand } from "@server/world/land/resolver.js";
+export { resolveAgentHomedirDir as resolveAgentHomedir } from "@server/world/homedir/resolver.js";

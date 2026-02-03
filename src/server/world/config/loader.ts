@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import type { ZuckermanConfig } from "./types.js";
 
 const CONFIG_PATH = join(homedir(), ".zuckerman", "config.json");
-const DEFAULT_LAND = join(homedir(), ".zuckerman", "land");
+const DEFAULT_HOMEDIR = join(homedir(), ".zuckerman", "homedir");
 
 const defaultConfig: ZuckermanConfig = {
   gateway: {
@@ -18,11 +18,11 @@ const defaultConfig: ZuckermanConfig = {
       {
         id: "zuckerman",
         default: true,
-        land: DEFAULT_LAND,
+        homedir: DEFAULT_HOMEDIR,
       },
     ],
     defaults: {
-      land: DEFAULT_LAND,
+      homedir: DEFAULT_HOMEDIR,
     },
   },
   routing: {

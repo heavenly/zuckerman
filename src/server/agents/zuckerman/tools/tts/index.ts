@@ -1,7 +1,7 @@
 import type { SecurityContext } from "@server/world/execution/security/types.js";
 import { isToolAllowed } from "@server/world/execution/security/policy/tool-policy.js";
 import type { Tool, ToolDefinition, ToolResult } from "../terminal/index.js";
-import { convertTTS } from "@server/world/voice/tts.js";
+import { convertTTS } from "../voice/tts.js";
 import { loadConfig } from "@server/world/config/index.js";
 
 export function createTtsTool(): Tool {

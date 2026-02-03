@@ -121,7 +121,7 @@ export function createBrowserTool(): Tool {
           },
           savePath: {
             type: "string",
-            description: "File path to save screenshot (for screenshot action). If not provided, saves to land/screenshots/",
+            description: "File path to save screenshot (for screenshot action). If not provided, saves to homedir/screenshots/",
           },
           format: {
             type: "string",
@@ -301,9 +301,9 @@ export function createBrowserTool(): Tool {
                   ? params.savePath.replace("~", homedir())
                   : params.savePath;
               } else {
-                // Default: save to land/screenshots/ (use sandbox path if available)
-                const landDir = executionContext?.landDir || join(homedir(), ".zuckerman", "land");
-                const screenshotsDir = join(landDir, "screenshots");
+                // Default: save to homedir/screenshots/ (use sandbox path if available)
+                const homedirDir = executionContext?.homedirDir || join(homedir(), ".zuckerman", "homedir");
+                const screenshotsDir = join(homedirDir, "screenshots");
                 if (!existsSync(screenshotsDir)) {
                   mkdirSync(screenshotsDir, { recursive: true });
                 }

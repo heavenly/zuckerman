@@ -58,7 +58,7 @@ export function createDeviceTool(): Tool {
           },
           savePath: {
             type: "string",
-            description: "File path to save screen capture. If not provided, saves to land/screenshots/",
+            description: "File path to save screen capture. If not provided, saves to homedir/screenshots/",
           },
         },
         required: ["action"],
@@ -192,8 +192,8 @@ export function createDeviceTool(): Tool {
 
           case "screen_capture": {
             // Capture device screen (works on local machine)
-            const landDir = executionContext?.landDir || join(homedir(), ".zuckerman", "land");
-            const screenshotsDir = join(landDir, "screenshots");
+            const homedirDir = executionContext?.homedirDir || join(homedir(), ".zuckerman", "homedir");
+            const screenshotsDir = join(homedirDir, "screenshots");
             if (!existsSync(screenshotsDir)) {
               mkdirSync(screenshotsDir, { recursive: true });
             }

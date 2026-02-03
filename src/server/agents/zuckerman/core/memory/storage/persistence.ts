@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { ensureLandDir } from "@server/world/land/resolver.js";
+import { ensureHomedirDir } from "@server/world/homedir/resolver.js";
 
 /**
  * Get today's date in YYYY-MM-DD format
@@ -28,15 +28,15 @@ function getYesterdayDate(): string {
 /**
  * Resolve memory directory path
  */
-export function resolveMemoryDir(landDir: string): string {
-  return join(landDir, "memory");
+export function resolveMemoryDir(homedirDir: string): string {
+  return join(homedirDir, "memory");
 }
 
 /**
  * Resolve daily memory file path
  */
-export function resolveDailyMemoryPath(landDir: string, date?: string): string {
-  const memoryDir = resolveMemoryDir(landDir);
+export function resolveDailyMemoryPath(homedirDir: string, date?: string): string {
+  const memoryDir = resolveMemoryDir(homedirDir);
   const dateStr = date || getTodayDate();
   return join(memoryDir, `${dateStr}.md`);
 }
@@ -44,20 +44,20 @@ export function resolveDailyMemoryPath(landDir: string, date?: string): string {
 /**
  * Resolve long-term memory file path
  */
-export function resolveLongTermMemoryPath(landDir: string): string {
-  return join(landDir, "MEMORY.md");
+export function resolveLongTermMemoryPath(homedirDir: string): string {
+  return join(homedirDir, "MEMORY.md");
 }
 
 /**
  * Load memory files for conversation start
  * Returns today + yesterday daily logs + long-term memory
  */
-export function loadMemoryForConversation(landDir: string): {
+export function loadMemoryForConversation(homedirDir: string): {
   dailyLogs: Map<string, string>;
   longTermMemory: string;
 } {
-  ensureLandDir(landDir);
-  const memoryDir = resolveMemoryDir(landDir);
+  ensureHomedirDir(homedirDir);
+  const memoryDir = resolveMemoryDir(homedirDir);
   
   // Ensure memory directory exists
   if (!existsSync(memoryDir)) {
@@ -69,7 +69,7 @@ export function loadMemoryForConversation(landDir: string): {
   const yesterday = getYesterdayDate();
 
   // Load today's log
-  const todayPath = resolveDailyMemoryPath(landDir, today);
+  const todayPath = resolveDailyMemoryPath(homedirDir, today);
   if (existsSync(todayPath)) {
     try {
       dailyLogs.set(today, readFileSync(todayPath, "utf-8"));
@@ -79,7 +79,7 @@ export function loadMemoryForConversation(landDir: string): {
   }
 
   // Load yesterday's log
-  const yesterdayPath = resolveDailyMemoryPath(landDir, yesterday);
+  const yesterdayPath = resolveDailyMemoryPath(homedirDir, yesterday);
   if (existsSync(yesterdayPath)) {
     try {
       dailyLogs.set(yesterday, readFileSync(yesterdayPath, "utf-8"));
@@ -90,7 +90,7 @@ export function loadMemoryForConversation(landDir: string): {
 
   // Load long-term memory
   let longTermMemory = "";
-  const memoryPath = resolveLongTermMemoryPath(landDir);
+  const memoryPath = resolveLongTermMemoryPath(homedirDir);
   if (existsSync(memoryPath)) {
     try {
       longTermMemory = readFileSync(memoryPath, "utf-8");
@@ -105,15 +105,15 @@ export function loadMemoryForConversation(landDir: string): {
 /**
  * Append to today's daily memory log
  */
-export function appendDailyMemory(landDir: string, content: string): void {
-  ensureLandDir(landDir);
-  const memoryDir = resolveMemoryDir(landDir);
+export function appendDailyMemory(homedirDir: string, content: string): void {
+  ensureHomedirDir(homedirDir);
+  const memoryDir = resolveMemoryDir(homedirDir);
   
   if (!existsSync(memoryDir)) {
     mkdirSync(memoryDir, { recursive: true });
   }
 
-  const todayPath = resolveDailyMemoryPath(landDir);
+  const todayPath = resolveDailyMemoryPath(homedirDir);
   const timestamp = new Date().toISOString();
   const entry = `\n\n---\n\n[${timestamp}]\n\n${content}\n`;
 
@@ -127,9 +127,9 @@ export function appendDailyMemory(landDir: string, content: string): void {
 /**
  * Update long-term memory (overwrites existing)
  */
-export function updateLongTermMemory(landDir: string, content: string): void {
-  ensureLandDir(landDir);
-  const memoryPath = resolveLongTermMemoryPath(landDir);
+export function updateLongTermMemory(homedirDir: string, content: string): void {
+  ensureHomedirDir(homedirDir);
+  const memoryPath = resolveLongTermMemoryPath(homedirDir);
 
   try {
     writeFileSync(memoryPath, content, "utf-8");
@@ -141,9 +141,9 @@ export function updateLongTermMemory(landDir: string, content: string): void {
 /**
  * Append to long-term memory
  */
-export function appendLongTermMemory(landDir: string, content: string): void {
-  ensureLandDir(landDir);
-  const memoryPath = resolveLongTermMemoryPath(landDir);
+export function appendLongTermMemory(homedirDir: string, content: string): void {
+  ensureHomedirDir(homedirDir);
+  const memoryPath = resolveLongTermMemoryPath(homedirDir);
 
   const timestamp = new Date().toISOString();
   const entry = `\n\n---\n\n[${timestamp}]\n\n${content}\n`;

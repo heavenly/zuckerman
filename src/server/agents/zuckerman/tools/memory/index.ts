@@ -1,7 +1,7 @@
 import type { Tool } from "../terminal/index.js";
 import type { ToolExecutionContext } from "../terminal/index.js";
 import { loadConfig } from "@server/world/config/index.js";
-import { resolveAgentLandDir } from "@server/world/land/resolver.js";
+import { resolveAgentHomedirDir } from "@server/world/homedir/resolver.js";
 import { resolveMemorySearchConfig } from "@server/agents/zuckerman/core/memory/config.js";
 import { getMemorySearchManager } from "@server/agents/zuckerman/core/memory/retrieval/search.js";
 import {
@@ -50,10 +50,10 @@ export function createMemorySearchTool(): Tool {
 
         const config = await loadConfig();
         const agentId = "zuckerman";
-        const landDir = executionContext?.landDir || resolveAgentLandDir(config, agentId);
+        const homedirDir = executionContext?.homedirDir || resolveAgentHomedirDir(config, agentId);
         const memoryConfig = resolveMemorySearchConfig(
           config.agent?.memorySearch || {},
-          landDir,
+          homedirDir,
           agentId,
         );
 
@@ -67,7 +67,7 @@ export function createMemorySearchTool(): Tool {
 
         const { manager, error } = await getMemorySearchManager({
           config: memoryConfig,
-          workspaceDir: landDir,
+          workspaceDir: homedirDir,
           agentId,
         });
 
@@ -151,10 +151,10 @@ export function createMemoryGetTool(): Tool {
 
         const config = await loadConfig();
         const agentId = "zuckerman";
-        const landDir = executionContext?.landDir || resolveAgentLandDir(config, agentId);
+        const homedirDir = executionContext?.homedirDir || resolveAgentHomedirDir(config, agentId);
         const memoryConfig = resolveMemorySearchConfig(
           config.agent?.memorySearch || {},
-          landDir,
+          homedirDir,
           agentId,
         );
 
@@ -168,7 +168,7 @@ export function createMemoryGetTool(): Tool {
 
         const { manager, error } = await getMemorySearchManager({
           config: memoryConfig,
-          workspaceDir: landDir,
+          workspaceDir: homedirDir,
           agentId,
         });
 
@@ -236,9 +236,9 @@ export function createMemorySaveTool(): Tool {
 
         const config = await loadConfig();
         const agentId = "zuckerman";
-        const landDir = executionContext?.landDir || resolveAgentLandDir(config, agentId);
+        const homedirDir = executionContext?.homedirDir || resolveAgentHomedirDir(config, agentId);
 
-        appendDailyMemory(landDir, content);
+        appendDailyMemory(homedirDir, content);
 
         return {
           success: true,
@@ -297,12 +297,12 @@ export function createMemoryUpdateTool(): Tool {
 
         const config = await loadConfig();
         const agentId = "zuckerman";
-        const landDir = executionContext?.landDir || resolveAgentLandDir(config, agentId);
+        const homedirDir = executionContext?.homedirDir || resolveAgentHomedirDir(config, agentId);
 
         if (mode === "replace") {
-          updateLongTermMemory(landDir, content);
+          updateLongTermMemory(homedirDir, content);
         } else {
-          appendLongTermMemory(landDir, content);
+          appendLongTermMemory(homedirDir, content);
         }
 
         return {

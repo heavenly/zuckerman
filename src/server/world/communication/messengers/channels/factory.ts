@@ -90,7 +90,7 @@ export async function initializeChannels(
           route.conversationId,
           conversation.conversation.type,
           route.agentId,
-          route.landDir,
+          route.homedirDir,
         );
 
         const result = await runtime.run({
@@ -207,7 +207,7 @@ export async function initializeChannels(
           route.conversationId,
           conversation.conversation.type,
           route.agentId,
-          route.landDir,
+          route.homedirDir,
         );
 
         const result = await runtime.run({

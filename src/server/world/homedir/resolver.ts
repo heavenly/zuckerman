@@ -4,30 +4,30 @@ import { existsSync, mkdirSync } from "node:fs";
 import type { ZuckermanConfig } from "@server/world/config/types.js";
 
 /**
- * Default land directory
+ * Default homedir directory
  */
-export const DEFAULT_LAND_DIR = join(homedir(), ".zuckerman", "land");
+export const DEFAULT_HOMEDIR_DIR = join(homedir(), ".zuckerman", "homedir");
 
 /**
- * Resolve land directory for an agent
+ * Resolve homedir directory for an agent
  */
-export function resolveAgentLandDir(
+export function resolveAgentHomedirDir(
   config: ZuckermanConfig,
   agentId: string,
 ): string {
-  // Check if agent has specific land configured
+  // Check if agent has specific homedir configured
   const agents = config.agents?.list || [];
   const agent = agents.find((a) => a.id === agentId);
 
-  if (agent?.land) {
-    return expandPath(agent.land);
+  if (agent?.homedir) {
+    return expandPath(agent.homedir);
   }
 
-  // Use default land
-  const defaultLand = config.agents?.defaults?.land || DEFAULT_LAND_DIR;
-  const expandedDefault = expandPath(defaultLand);
+  // Use default homedir
+  const defaultHomedir = config.agents?.defaults?.homedir || DEFAULT_HOMEDIR_DIR;
+  const expandedDefault = expandPath(defaultHomedir);
 
-  // If it's the default agent, use land as-is
+  // If it's the default agent, use homedir as-is
   const defaultAgent = agents.find((a) => a.default) || agents[0];
   if (agentId === defaultAgent?.id) {
     return expandedDefault;
@@ -48,10 +48,10 @@ function expandPath(path: string): string {
 }
 
 /**
- * Ensure land directory exists
+ * Ensure homedir directory exists
  */
-export function ensureLandDir(landDir: string): void {
-  if (!existsSync(landDir)) {
-    mkdirSync(landDir, { recursive: true });
+export function ensureHomedirDir(homedirDir: string): void {
+  if (!existsSync(homedirDir)) {
+    mkdirSync(homedirDir, { recursive: true });
   }
 }

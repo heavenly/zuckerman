@@ -24,9 +24,9 @@ export async function runSleepModeIfNeeded(params: {
   conversationId: string;
   modelId?: string;
   agentId: string;
-  landDir: string;
+  homedirDir: string;
 }): Promise<ConversationEntry | undefined> {
-  const { config, runtime, conversationManager, conversationId, modelId, agentId, landDir } = params;
+  const { config, runtime, conversationManager, conversationId, modelId, agentId, homedirDir } = params;
 
   // Resolve sleep settings
   const sleepConfig = resolveSleepConfig({
@@ -90,13 +90,13 @@ export async function runSleepModeIfNeeded(params: {
     const longTermContent = formatMemoriesForLongTerm(consolidatedMemories);
 
     if (dailyLogContent) {
-      appendDailyMemory(landDir, dailyLogContent);
+      appendDailyMemory(homedirDir, dailyLogContent);
     }
 
     if (longTermContent) {
       // Check if we should append or update
       // For now, append to preserve existing content
-      appendLongTermMemory(landDir, longTermContent);
+      appendLongTermMemory(homedirDir, longTermContent);
     }
 
     // Also run agent with sleep prompt to let it save additional memories using tools

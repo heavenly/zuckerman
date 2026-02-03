@@ -12,8 +12,8 @@ export async function resolveSecurityContext(
   conversationId: string,
   conversationType: ConversationType,
   agentId: string,
-  landDir: string,
-  agentLandDir?: string,
+  homedirDir: string,
+  agentHomedirDir?: string,
 ): Promise<SecurityContext> {
   // Resolve policy-based context
   const context = resolvePolicy(config, conversationId, conversationType, agentId);
@@ -25,8 +25,8 @@ export async function resolveSecurityContext(
       sandboxContext = await ensureSandboxContainer({
         conversationId,
         agentId,
-        workspaceDir: landDir,
-        agentWorkspaceDir: agentLandDir,
+        workspaceDir: homedirDir,
+        agentWorkspaceDir: agentHomedirDir,
         config: config.sandbox,
       });
     } catch (err) {
