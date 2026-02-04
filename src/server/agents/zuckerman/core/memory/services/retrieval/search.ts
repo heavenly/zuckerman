@@ -10,7 +10,7 @@ import type { ResolvedMemorySearchConfig } from "../../config.js";
 import { parseEmbedding, cosineSimilarity } from "../encoding/embeddings.js";
 import { ensureMemoryIndexSchema } from "../encoding/schema.js";
 import { createEmbeddingProvider, type EmbeddingProvider } from "@server/world/providers/embeddings/index.js";
-import { MemoryIndexerImpl } from "../storage/indexing.js";
+import { MemoryIndexerImpl } from "../indexing/index.js";
 
 export type MemorySearchResult = {
   path: string;

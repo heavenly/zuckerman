@@ -51,6 +51,7 @@ export class UnifiedMemoryManager implements MemoryManager {
   }
 
   // ========== Working Memory ==========
+  // Active buffer for current task processing. Short-lived (minutes to hours), in-memory only. No file storage.
 
   setWorkingMemory(
     conversationId: string,
@@ -69,6 +70,7 @@ export class UnifiedMemoryManager implements MemoryManager {
   }
 
   // ========== Episodic Memory ==========
+  // Remembers specific events and experiences. Stored in episodic.json, also appended to daily logs. Decays over time (days to weeks).
 
   addEpisodicMemory(
     memory: Omit<EpisodicMemory, "id" | "type" | "createdAt" | "updatedAt">
@@ -98,6 +100,7 @@ export class UnifiedMemoryManager implements MemoryManager {
   }
 
   // ========== Semantic Memory ==========
+  // Stores facts, knowledge, and concepts. Permanent storage, saved to MEMORY.md (or memory.md).
 
   addSemanticMemory(
     memory: Omit<SemanticMemory, "id" | "type" | "createdAt" | "updatedAt">
@@ -122,6 +125,7 @@ export class UnifiedMemoryManager implements MemoryManager {
   }
 
   // ========== Procedural Memory ==========
+  // Stores skills, habits, and automatic patterns. Improves with use, stored in procedural.json.
 
   addProceduralMemory(
     memory: Omit<ProceduralMemory, "id" | "type" | "createdAt" | "updatedAt">
@@ -141,6 +145,7 @@ export class UnifiedMemoryManager implements MemoryManager {
   }
 
   // ========== Prospective Memory ==========
+  // Stores future intentions, reminders, and scheduled tasks. Triggers at specific times or contexts. Stored in prospective.json.
 
   addProspectiveMemory(
     memory: Omit<ProspectiveMemory, "id" | "type" | "createdAt" | "updatedAt">
@@ -167,6 +172,7 @@ export class UnifiedMemoryManager implements MemoryManager {
   }
 
   // ========== Emotional Memory ==========
+  // Stores emotional associations and reactions linked to other memories. Provides context for emotional responses. Stored in emotional.json.
 
   addEmotionalMemory(
     memory: Omit<EmotionalMemory, "id" | "type" | "createdAt" | "updatedAt">

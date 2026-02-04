@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
 import type { ResolvedMemorySearchConfig } from "../../config.js";
 import { chunkMarkdown } from "../encoding/chunking.js";
-import { listMemoryFiles, buildFileEntry } from "./files.js";
+import { listMemoryFiles, buildFileEntry } from "../storage/files.js";
 import type { EmbeddingProvider } from "@server/world/providers/embeddings/index.js";
 
 export interface MemoryIndexer {
