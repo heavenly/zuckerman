@@ -2,7 +2,6 @@
  * Sleep mode runner - executes sleep mode processing
  */
 
-import type { AgentRuntime } from "@server/world/runtime/agents/types.js";
 import type { ConversationManager } from "../conversations/manager.js";
 import { deriveConversationKey } from "../conversations/manager.js";
 import { loadConversationStore } from "../conversations/store.js";
@@ -11,22 +10,22 @@ import type { ZuckermanConfig } from "@server/world/config/types.js";
 import { resolveSleepConfig } from "./config.js";
 import { shouldSleep, resolveSleepContextWindowTokens } from "./trigger.js";
 import { processConversation } from "./processor.js";
-import { consolidateMemories, formatMemoriesForDailyLog, formatMemoriesForLongTerm } from "./consolidator.js";
-import { appendDailyMemory, updateLongTermMemory, appendLongTermMemory } from "../core/memory/services/storage/persistence.js";
+import { consolidateMemories } from "./consolidator.js";
+import { resolveMemoryDir } from "../core/memory/services/storage/persistence.js";
+import { UnifiedMemoryManager } from "../core/memory/manager.js";
 
 /**
  * Run sleep mode if needed
  */
 export async function runSleepModeIfNeeded(params: {
   config: ZuckermanConfig;
-  runtime: AgentRuntime;
   conversationManager: ConversationManager;
   conversationId: string;
   modelId?: string;
   agentId: string;
   homedirDir: string;
 }): Promise<ConversationEntry | undefined> {
-  const { config, runtime, conversationManager, conversationId, modelId, agentId, homedirDir } = params;
+  const { config, conversationManager, conversationId, modelId, agentId, homedirDir } = params;
 
   // Resolve sleep settings
   const sleepConfig = resolveSleepConfig({
@@ -85,28 +84,12 @@ export async function runSleepModeIfNeeded(params: {
     // Phase 2 & 3: Consolidate memories
     const consolidatedMemories = consolidateMemories(importantMessages, summary);
 
-    // Phase 4: Save using Memory APIs (no duplication)
-    const dailyLogContent = formatMemoriesForDailyLog(consolidatedMemories);
-    const longTermContent = formatMemoriesForLongTerm(consolidatedMemories);
-
-    if (dailyLogContent) {
-      appendDailyMemory(homedirDir, dailyLogContent);
-    }
-
-    if (longTermContent) {
-      // Check if we should append or update
-      // For now, append to preserve existing content
-      appendLongTermMemory(homedirDir, longTermContent);
-    }
-
-    // Also run agent with sleep prompt to let it save additional memories using tools
-    await runtime.run({
-      conversationId,
-      message: sleepConfig.prompt,
-      thinkingLevel: "off",
-      temperature: 0.7,
-      model: undefined,
-    });
+    // Phase 4: Save using UnifiedMemoryManager (creates structured memories + file persistence)
+    const storageDir = resolveMemoryDir(homedirDir);
+    const memoryManager = new UnifiedMemoryManager(storageDir, homedirDir);
+    
+    // Save consolidated memories (creates episodic/semantic memories automatically)
+    memoryManager.saveConsolidatedMemories(consolidatedMemories, conversationId);
 
     // Update conversation entry with sleep metadata
     const updatedEntry = await conversationManager.updateConversationEntry(conversationId, (current) => ({

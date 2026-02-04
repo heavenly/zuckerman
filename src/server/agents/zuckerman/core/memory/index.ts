@@ -14,6 +14,9 @@ export * from "./stores/emotional/index.js";
 // Memory Manager (Unified Interface)
 export * from "./manager.js"; // Unified Memory Manager
 
+// Memory Extraction (Real-time)
+export * from "./services/extraction/index.js";
+
 // Services: Encoding, Storage, Retrieval
 export * from "./services/encoding/schema.js"; // Database schema
 export * from "./services/encoding/chunking.js"; // Text chunking

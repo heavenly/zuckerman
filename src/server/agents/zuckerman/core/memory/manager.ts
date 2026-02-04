@@ -26,6 +26,8 @@ import {
   appendDailyMemory,
   appendLongTermMemory,
 } from "./services/storage/persistence.js";
+import { extractMemoriesFromMessage } from "./services/extraction/index.js";
+import type { LLMProvider } from "@server/world/providers/llm/types.js";
 
 export class UnifiedMemoryManager implements MemoryManager {
   private workingMemory: WorkingMemoryStore;
@@ -35,10 +37,12 @@ export class UnifiedMemoryManager implements MemoryManager {
   private emotionalMemory: EmotionalMemoryStore;
   private storageDir: string;
   private homedirDir?: string;
+  private llmProvider?: LLMProvider;
 
-  constructor(storageDir: string, homedirDir?: string) {
+  constructor(storageDir: string, homedirDir?: string, llmProvider?: LLMProvider) {
     this.storageDir = storageDir;
     this.homedirDir = homedirDir;
+    this.llmProvider = llmProvider;
     this.workingMemory = new WorkingMemoryStore();
     this.episodicMemory = new EpisodicMemoryStore(storageDir);
     this.proceduralMemory = new ProceduralMemoryStore(storageDir);
@@ -270,5 +274,128 @@ export class UnifiedMemoryManager implements MemoryManager {
    */
   getProspectiveMemoriesByContext(context: string): ProspectiveMemory[] {
     return this.prospectiveMemory.getByContext(context);
+  }
+
+  // ========== Sleep Mode Integration ==========
+
+  /**
+   * Save consolidated memories from sleep mode
+   * Creates structured episodic/semantic memories and also saves to files for backward compatibility
+   */
+  saveConsolidatedMemories(
+    memories: Array<{
+      content: string;
+      type: "fact" | "preference" | "decision" | "event" | "learning";
+      importance: number;
+      shouldSaveToLongTerm: boolean;
+    }>,
+    conversationId?: string
+  ): void {
+    const now = Date.now();
+    
+    for (const memory of memories) {
+      if (memory.shouldSaveToLongTerm) {
+        // Save as semantic memory (long-term facts, preferences, learnings)
+        this.addSemanticMemory({
+          fact: memory.content,
+          category: memory.type,
+          confidence: memory.importance,
+          source: conversationId,
+        });
+      } else {
+        // Save as episodic memory (events, decisions)
+        this.addEpisodicMemory({
+          event: memory.type === "event" ? memory.content : `${memory.type}: ${memory.content}`,
+          timestamp: now,
+          context: {
+            what: memory.content,
+            when: now,
+            why: `Importance: ${memory.importance.toFixed(2)}, Type: ${memory.type}`,
+          },
+          conversationId,
+        });
+      }
+    }
+  }
+
+  // ========== Real-time Memory Extraction ==========
+
+  /**
+   * Process a new user message and extract/save important memories
+   * This is called by the runtime when a new user message arrives
+   */
+  async onNewMessage(
+    userMessage: string,
+    conversationId?: string,
+    conversationContext?: string
+  ): Promise<void> {
+    if (!this.llmProvider) {
+      // No LLM provider available, skip extraction
+      return;
+    }
+
+    try {
+      const extractionResult = await extractMemoriesFromMessage(
+        this.llmProvider,
+        userMessage,
+        conversationContext
+      );
+
+      if (extractionResult.hasImportantInfo && extractionResult.memories.length > 0) {
+        this.saveExtractedMemories(extractionResult.memories, conversationId);
+      }
+    } catch (extractionError) {
+      // Don't fail if extraction fails - just log and continue
+      console.warn(`[UnifiedMemoryManager] Memory extraction failed:`, extractionError);
+    }
+  }
+
+  /**
+   * Save extracted memories from real-time extraction
+   * Similar to saveConsolidatedMemories but optimized for immediate saving
+   */
+  private saveExtractedMemories(
+    memories: Array<{
+      type: "fact" | "preference" | "decision" | "event" | "learning";
+      content: string;
+      importance: number;
+      shouldSaveToLongTerm: boolean;
+      structuredData?: Record<string, unknown>;
+    }>,
+    conversationId?: string
+  ): void {
+    const now = Date.now();
+    
+    for (const memory of memories) {
+      if (memory.shouldSaveToLongTerm) {
+        // Save as semantic memory (long-term facts, preferences, learnings)
+        // Use structured data if available for better fact extraction
+        const fact = memory.structuredData 
+          ? Object.entries(memory.structuredData)
+              .filter(([k]) => k !== "field")
+              .map(([k, v]) => `${k}: ${v}`)
+              .join(", ") || memory.content
+          : memory.content;
+        
+        this.addSemanticMemory({
+          fact,
+          category: memory.type,
+          confidence: memory.importance,
+          source: conversationId,
+        });
+      } else {
+        // Save as episodic memory (events, decisions)
+        this.addEpisodicMemory({
+          event: memory.type === "event" ? memory.content : `${memory.type}: ${memory.content}`,
+          timestamp: now,
+          context: {
+            what: memory.content,
+            when: now,
+            why: `Importance: ${memory.importance.toFixed(2)}, Type: ${memory.type}`,
+          },
+          conversationId,
+        });
+      }
+    }
   }
 }

@@ -14,15 +14,12 @@ export const DEFAULT_CONTEXT_TOKENS = 200_000;
 
 export const DEFAULT_SLEEP_PROMPT = [
   "Sleep mode: processing and consolidating memories.",
-  "Review the conversation and save important information to memory.",
-  "Use memory_save for today's events and memory_update for long-term facts.",
-  "If nothing important to save, reply with OK.",
+  "Memories are being automatically saved by the system.",
 ].join(" ");
 
 export const DEFAULT_SLEEP_SYSTEM_PROMPT = [
-  "Sleep mode turn.",
-  "The conversation context is near capacity; process and consolidate memories.",
-  "Analyze what should be remembered and save it appropriately.",
+  "Sleep mode: The system is automatically processing and consolidating memories.",
+  "No action needed - memories are being saved automatically.",
 ].join(" ");
 
 /**

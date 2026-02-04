@@ -17,7 +17,9 @@ import {
 import {
   loadMemoryForConversation,
   formatMemoryForPrompt,
+  resolveMemoryDir,
 } from "@server/agents/zuckerman/core/memory/services/storage/persistence.js";
+import { UnifiedMemoryManager } from "@server/agents/zuckerman/core/memory/manager.js";
 import { runSleepModeIfNeeded } from "@server/agents/zuckerman/sleep/index.js";
 import { activityRecorder } from "@server/world/activity/index.js";
 
@@ -121,7 +123,6 @@ export class ZuckermanAwareness implements AgentRuntime {
       const modelForSleep = model || selectModel(provider, config);
       await runSleepModeIfNeeded({
         config,
-        runtime: this,
         conversationManager: this.conversationManager,
         conversationId,
         modelId: modelForSleep?.id,
@@ -154,6 +155,19 @@ export class ZuckermanAwareness implements AgentRuntime {
 
       // Add current user message
       messages.push({ role: "user", content: message });
+
+      // Process new message for memory extraction (real-time)
+      try {
+        const storageDir = resolveMemoryDir(homedirDir);
+        const memoryManager = new UnifiedMemoryManager(storageDir, homedirDir, provider);
+        const conversationContext = conversation 
+          ? conversation.messages.slice(-3).map(m => m.content).join("\n")
+          : undefined;
+        await memoryManager.onNewMessage(message, conversationId, conversationContext);
+      } catch (extractionError) {
+        // Don't fail the main flow if extraction fails
+        console.warn(`[ZuckermanRuntime] Memory extraction failed:`, extractionError);
+      }
 
       // Select model (thinkingLevel is not a model override - it's a separate parameter)
       const selectedModel = model || selectModel(provider, config);
