@@ -7,12 +7,10 @@ import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import type { ResolvedMemorySearchConfig } from "../../config.js";
-import type { MemoryChunk } from "../encoding/chunking.js";
-import { chunkMarkdown, hashText } from "../encoding/chunking.js";
 import { parseEmbedding, cosineSimilarity } from "../encoding/embeddings.js";
 import { ensureMemoryIndexSchema } from "../encoding/schema.js";
-import { listMemoryFiles, buildFileEntry, type MemoryFileEntry } from "../storage/files.js";
 import { createEmbeddingProvider, type EmbeddingProvider } from "@server/world/providers/embeddings/index.js";
+import { MemoryIndexerImpl } from "../storage/indexing.js";
 
 export type MemorySearchResult = {
   path: string;
@@ -42,12 +40,14 @@ export interface MemorySearchManager {
   status(): {
     files: number;
     chunks: number;
-    dirty: boolean;
     workspaceDir: string;
     dbPath: string;
     provider: string;
     model: string;
     sources: Array<"memory" | "conversations">;
+    dbInitialized: boolean;
+    dbExists: boolean;
+    dbError?: string;
   };
 
   sync(params?: {
@@ -65,7 +65,7 @@ class MemorySearchManagerImpl implements MemorySearchManager {
   private config: ResolvedMemorySearchConfig;
   private workspaceDir: string;
   private embeddingProvider: EmbeddingProvider | null;
-  private dirty = false;
+  private indexer: MemoryIndexerImpl | null = null;
   private ftsTable = "fts_memory";
   private embeddingCacheTable = "embedding_cache";
 
@@ -75,29 +75,54 @@ class MemorySearchManagerImpl implements MemorySearchManager {
     this.embeddingProvider = createEmbeddingProvider(config);
   }
 
+  /**
+   * Initialize the database connection and schema.
+   * This is called once when the manager is created via getMemorySearchManager().
+   * The database is shared across all memory operations for this manager instance.
+   */
   async initialize(): Promise<void> {
     if (this.db) return;
 
     const dbPath = this.config.store.path;
     const dbDir = dirname(dbPath);
     
-    if (!existsSync(dbDir)) {
-      mkdirSync(dbDir, { recursive: true });
-    }
+    try {
+      if (!existsSync(dbDir)) {
+        mkdirSync(dbDir, { recursive: true });
+      }
 
-    this.db = new DatabaseSync(dbPath);
-    
-    // Enable FTS5 if available
-    const ftsEnabled = this.config.store.vector.enabled;
-    const { ftsAvailable } = ensureMemoryIndexSchema({
-      db: this.db,
-      embeddingCacheTable: this.embeddingCacheTable,
-      ftsTable: this.ftsTable,
-      ftsEnabled,
-    });
+      this.db = new DatabaseSync(dbPath);
+      
+      // Enable FTS5 if available
+      const ftsEnabled = this.config.store.vector.enabled;
+      const { ftsAvailable, ftsError } = ensureMemoryIndexSchema({
+        db: this.db,
+        embeddingCacheTable: this.embeddingCacheTable,
+        ftsTable: this.ftsTable,
+        ftsEnabled,
+      });
 
-    if (!ftsAvailable && ftsEnabled) {
-      console.warn("FTS5 not available, falling back to vector-only search");
+      if (!ftsAvailable && ftsEnabled) {
+        console.warn(`FTS5 not available: ${ftsError || "unknown error"}, falling back to vector-only search`);
+      }
+
+      // Verify database is working by running a simple query
+      this.db.prepare("SELECT 1").get();
+      
+      // Create indexer instance for syncing files to database
+      this.indexer = new MemoryIndexerImpl(
+        this.db,
+        this.config,
+        this.workspaceDir,
+        this.embeddingProvider,
+        this.ftsTable
+      );
+      
+      console.log(`[Memory] Database initialized at ${dbPath}${ftsEnabled && ftsAvailable ? " (FTS5 enabled)" : ""}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[Memory] Failed to initialize database at ${dbPath}:`, message);
+      throw new Error(`Database initialization failed: ${message}`);
     }
   }
 
@@ -109,8 +134,26 @@ class MemorySearchManagerImpl implements MemorySearchManager {
       conversationKey?: string;
     },
   ): Promise<MemorySearchResult[]> {
-    await this.initialize();
-    if (!this.db) return [];
+    // Database is initialized when manager is created via getMemorySearchManager()
+    if (!this.db) {
+      console.warn("[Memory] Database not initialized, search will return empty results");
+      return [];
+    }
+
+    // Check if database is empty and sync if needed
+    try {
+      const chunkCount = (this.db.prepare("SELECT COUNT(*) as count FROM chunks").get() as { count: number }).count;
+      if (chunkCount === 0 && this.indexer) {
+        console.log("[Memory] Database is empty, syncing before search...");
+        await this.sync({ reason: "empty_database_before_search" });
+      }
+    } catch (error) {
+      // If chunks table doesn't exist yet, sync will create it
+      if (this.indexer) {
+        console.log("[Memory] Database schema may be incomplete, syncing before search...");
+        await this.sync({ reason: "schema_incomplete_before_search" });
+      }
+    }
 
     const maxResults = opts?.maxResults ?? this.config.query.maxResults;
     const minScore = opts?.minScore ?? this.config.query.minScore;
@@ -165,6 +208,7 @@ class MemorySearchManagerImpl implements MemorySearchManager {
     // FTS5 search (if available and hybrid enabled)
     if (this.config.query.hybrid.enabled) {
       try {
+        const sanitizedQuery = this.sanitizeFTS5Query(query);
         const ftsResults = this.db.prepare(`
           SELECT id, path, source, start_line, end_line, text,
                  bm25(${this.ftsTable}) as rank
@@ -172,7 +216,7 @@ class MemorySearchManagerImpl implements MemorySearchManager {
           WHERE ${this.ftsTable} MATCH ?
           ORDER BY rank
           LIMIT ?
-        `).all(query, maxResults * this.config.query.hybrid.candidateMultiplier) as Array<{
+        `).all(sanitizedQuery, maxResults * this.config.query.hybrid.candidateMultiplier) as Array<{
           id: string;
           path: string;
           source: string;
@@ -284,164 +328,74 @@ class MemorySearchManagerImpl implements MemorySearchManager {
   status(): {
     files: number;
     chunks: number;
-    dirty: boolean;
     workspaceDir: string;
     dbPath: string;
     provider: string;
     model: string;
     sources: Array<"memory" | "conversations">;
+    dbInitialized: boolean;
+    dbExists: boolean;
+    dbError?: string;
   } {
+    const dbPath = this.config.store.path;
+    const dbExists = existsSync(dbPath);
+    
     if (!this.db) {
       return {
         files: 0,
         chunks: 0,
-        dirty: this.dirty,
         workspaceDir: this.workspaceDir,
-        dbPath: this.config.store.path,
+        dbPath,
         provider: this.config.provider,
         model: this.config.model,
         sources: this.config.sources,
+        dbInitialized: false,
+        dbExists,
+        dbError: dbExists ? "Database file exists but not initialized" : "Database file does not exist",
       };
     }
 
-    const files = (this.db.prepare("SELECT COUNT(*) as count FROM files").get() as { count: number }).count;
-    const chunks = (this.db.prepare("SELECT COUNT(*) as count FROM chunks").get() as { count: number }).count;
+    try {
+      const files = (this.db.prepare("SELECT COUNT(*) as count FROM files").get() as { count: number }).count;
+      const chunks = (this.db.prepare("SELECT COUNT(*) as count FROM chunks").get() as { count: number }).count;
 
-    return {
-      files,
-      chunks,
-      dirty: this.dirty,
-      workspaceDir: this.workspaceDir,
-      dbPath: this.config.store.path,
-      provider: this.config.provider,
-      model: this.config.model,
-      sources: this.config.sources,
-    };
+      return {
+        files,
+        chunks,
+        workspaceDir: this.workspaceDir,
+        dbPath,
+        provider: this.config.provider,
+        model: this.config.model,
+        sources: this.config.sources,
+        dbInitialized: true,
+        dbExists: true,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        files: 0,
+        chunks: 0,
+        workspaceDir: this.workspaceDir,
+        dbPath,
+        provider: this.config.provider,
+        model: this.config.model,
+        sources: this.config.sources,
+        dbInitialized: false,
+        dbExists,
+        dbError: `Database query failed: ${message}`,
+      };
+    }
   }
 
   async sync(params?: { reason?: string; force?: boolean }): Promise<void> {
-    await this.initialize();
-    if (!this.db || !this.embeddingProvider) {
-      console.warn("Cannot sync: database or embedding provider not available");
+    // Database is initialized when manager is created via getMemorySearchManager()
+    if (!this.indexer) {
+      console.warn("[Memory] Cannot sync: indexer not initialized");
       return;
     }
-
-    // List memory files
-    const memoryFiles = await listMemoryFiles(
-      this.workspaceDir,
-      this.config.extraPaths
-    );
-
-    // Process each file
-    for (const filePath of memoryFiles) {
-      const fileEntry = await buildFileEntry(filePath, this.workspaceDir);
-      
-      // Check if file needs updating
-      const existing = this.db.prepare("SELECT hash, mtime FROM files WHERE path = ?").get(fileEntry.path) as {
-        hash: string;
-        mtime: number;
-      } | undefined;
-
-      if (existing && !params?.force) {
-        if (existing.hash === fileEntry.hash && existing.mtime === fileEntry.mtimeMs) {
-          continue; // File unchanged
-        }
-      }
-
-      // Read and chunk file
-      const content = readFileSync(fileEntry.absPath, "utf-8");
-      const chunks = chunkMarkdown(content, this.config.chunking);
-
-      // Delete old chunks for this file
-      this.db.prepare("DELETE FROM chunks WHERE path = ?").run(fileEntry.path);
-      if (this.config.store.vector.enabled) {
-        try {
-          this.db.prepare(`DELETE FROM ${this.ftsTable} WHERE path = ?`).run(fileEntry.path);
-        } catch {
-          // FTS table might not exist
-        }
-      }
-
-      // Process chunks and create embeddings
-      const textsToEmbed = chunks.map((chunk) => chunk.text);
-      let embeddings: number[][] = [];
-
-      if (this.embeddingProvider) {
-        try {
-          // Batch embeddings if supported
-          embeddings = await this.embeddingProvider.getEmbeddings(textsToEmbed);
-        } catch (error) {
-          console.warn(`Failed to get embeddings for ${fileEntry.path}:`, error);
-          // Continue without embeddings
-        }
-      }
-
-      // Insert chunks
-      const insertChunk = this.db.prepare(`
-        INSERT OR REPLACE INTO chunks 
-        (id, path, source, start_line, end_line, hash, model, text, embedding, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      const insertFTS = this.config.store.vector.enabled
-        ? this.db.prepare(`
-            INSERT INTO ${this.ftsTable} 
-            (id, path, source, start_line, end_line, model, text)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `)
-        : null;
-
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-        const embedding = embeddings[i] || [];
-        const chunkId = `${fileEntry.path}:${chunk.startLine}:${chunk.endLine}`;
-        const embeddingJson = JSON.stringify(embedding);
-
-        insertChunk.run(
-          chunkId,
-          fileEntry.path,
-          "memory",
-          chunk.startLine,
-          chunk.endLine,
-          chunk.hash,
-          this.config.model,
-          chunk.text,
-          embeddingJson,
-          Date.now()
-        );
-
-        if (insertFTS) {
-          try {
-            insertFTS.run(
-              chunkId,
-              fileEntry.path,
-              "memory",
-              chunk.startLine,
-              chunk.endLine,
-              this.config.model,
-              chunk.text
-            );
-          } catch (error) {
-            // FTS might fail, continue
-            console.warn("FTS insert failed:", error);
-          }
-        }
-      }
-
-      // Update file record
-      this.db.prepare(`
-        INSERT OR REPLACE INTO files (path, source, hash, mtime, size)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(
-        fileEntry.path,
-        "memory",
-        fileEntry.hash,
-        fileEntry.mtimeMs,
-        fileEntry.size
-      );
-    }
-
-    this.dirty = false;
+    
+    // Delegate to indexing service
+    await this.indexer.sync(params);
   }
 
   async close(): Promise<void> {
@@ -480,8 +434,46 @@ class MemorySearchManagerImpl implements MemorySearchManager {
     const matches = queryWords.filter((word) => textLower.includes(word)).length;
     return matches / queryWords.length;
   }
+
+  /**
+   * Sanitize query string for FTS5 MATCH clause
+   * Escapes quotes properly to prevent syntax errors
+   * FTS5 requires single quotes to be doubled, and wrapping words/phrases
+   * in double quotes treats them as literals, preventing special character issues
+   */
+  private sanitizeFTS5Query(query: string): string {
+    if (!query || query.trim().length === 0) {
+      return "";
+    }
+
+    // Split query into words to handle multi-word queries better
+    const words = query.trim().split(/\s+/).filter(w => w.length > 0);
+    
+    if (words.length === 0) {
+      return "";
+    }
+
+    // Sanitize each word: escape quotes and wrap in double quotes
+    // This treats each word as a literal, preventing FTS5 operator interpretation
+    const sanitizedWords = words.map(word => {
+      // Escape double quotes by doubling them
+      let sanitized = word.replace(/"/g, '""');
+      // Escape single quotes by doubling them (FTS5 requirement)
+      sanitized = sanitized.replace(/'/g, "''");
+      // Wrap in double quotes to treat as literal
+      return `"${sanitized}"`;
+    });
+
+    // Join with spaces - FTS5 will match documents containing all words
+    return sanitizedWords.join(" ");
+  }
 }
 
+/**
+ * Get or create a MemorySearchManager instance.
+ * The manager is cached per agent/workspace/config combination.
+ * Database is initialized once when the manager is created and shared across all operations.
+ */
 export async function getMemorySearchManager(params: {
   config: ResolvedMemorySearchConfig;
   workspaceDir: string;
@@ -501,6 +493,7 @@ export async function getMemorySearchManager(params: {
 
   try {
     const manager = new MemorySearchManagerImpl(config, workspaceDir);
+    // Initialize database once at creation time - it will be shared across all operations
     await manager.initialize();
 
     // Auto-sync on creation if configured

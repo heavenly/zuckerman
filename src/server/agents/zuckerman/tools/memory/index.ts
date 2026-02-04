@@ -98,6 +98,10 @@ export function createMemorySearchTool(): Tool {
             model: status.model,
             totalFiles: status.files,
             totalChunks: status.chunks,
+            dbInitialized: status.dbInitialized,
+            dbExists: status.dbExists,
+            dbPath: status.dbPath,
+            ...(status.dbError ? { dbError: status.dbError } : {}),
           },
         };
       } catch (error) {
