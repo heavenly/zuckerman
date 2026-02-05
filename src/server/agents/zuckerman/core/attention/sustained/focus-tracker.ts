@@ -70,4 +70,66 @@ export class FocusTracker {
   getAllFocuses(): FocusState[] {
     return Array.from(this.focusStates.values());
   }
+
+  /**
+   * Update focus task from planning system
+   * Preserves topic continuity while updating active task
+   */
+  updateTaskFocus(
+    agentId: string,
+    taskTitle: string,
+    urgency?: FocusState["urgency"],
+    conversationId?: string
+  ): FocusState | null {
+    const current = this.getFocus(agentId);
+    if (!current) {
+      return null; // No focus to update
+    }
+
+    // Determine if task change represents topic shift
+    const taskChanged = current.currentTask !== taskTitle;
+    const topicShifted = taskChanged && 
+      taskTitle.toLowerCase() !== current.currentTopic.toLowerCase() &&
+      !taskTitle.toLowerCase().includes(current.currentTopic.toLowerCase());
+
+    let turnCount = current.turnCount;
+    if (topicShifted) {
+      turnCount = 1; // New topic - reset
+    } else if (taskChanged) {
+      turnCount += 1; // Same topic, new task - increment
+    }
+    // If same task, keep turn count
+
+    const updated: FocusState = {
+      ...current,
+      currentTask: taskTitle,
+      urgency: urgency || current.urgency,
+      lastUpdated: Date.now(),
+      turnCount,
+      lastConversationId: conversationId || current.lastConversationId,
+    };
+
+    this.focusStates.set(agentId, updated);
+    return updated;
+  }
+
+  /**
+   * Clear task from focus (when task completes)
+   * Keeps topic but removes task reference
+   */
+  clearTaskFocus(agentId: string): FocusState | null {
+    const current = this.getFocus(agentId);
+    if (!current) {
+      return null;
+    }
+
+    const updated: FocusState = {
+      ...current,
+      currentTask: undefined,
+      lastUpdated: Date.now(),
+    };
+
+    this.focusStates.set(agentId, updated);
+    return updated;
+  }
 }

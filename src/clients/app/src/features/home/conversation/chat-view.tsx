@@ -12,6 +12,7 @@ import type { UseAppReturn } from "../../../hooks/use-app";
 import { MessageItem } from "./components/message-item";
 import { ThinkingIndicator } from "./components/thinking-indicator";
 import { EmptyState } from "./components/empty-state";
+import { useGatewayContext } from "../../../core/gateway/use-gateway-context";
 
 interface ChatViewProps {
   state: UseAppReturn;
@@ -27,6 +28,7 @@ export function ChatView({ state, onAction }: ChatViewProps) {
   const isUserScrollingRef = useRef<boolean>(false);
 
   const { messages, isSending, sendMessage } = state;
+  const { gatewayClient } = useGatewayContext();
 
   // Helper function to check if user is at bottom (best practice: exact check)
   const isAtBottom = (element: HTMLDivElement, threshold = 50): boolean => {
@@ -238,6 +240,7 @@ export function ChatView({ state, onAction }: ChatViewProps) {
                     message={msg}
                     agentId={state.currentAgentId}
                     isSending={isSending}
+                    gatewayClient={gatewayClient}
                   />
                 );
               })}

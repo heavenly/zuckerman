@@ -1,9 +1,11 @@
 /**
  * Reactive Planning - Task switching
- * Handles task switching logic
+ * Handles task switching logic with LLM-based continuity assessment
  */
 
 import type { Task, TaskUrgency } from "../types.js";
+import type { FocusState } from "../../attention/types.js";
+import { FocusContinuityAnalyzer, type ContinuityAssessment } from "./continuity.js";
 
 /**
  * Task context for resumption
@@ -20,9 +22,29 @@ export interface TaskContext {
 export class TaskSwitcher {
   private savedContexts: Map<string, TaskContext> = new Map();
   private switchHistory: Array<{ from: string; to: string; timestamp: number }> = [];
+  private continuityAnalyzer: FocusContinuityAnalyzer;
+
+  constructor() {
+    this.continuityAnalyzer = new FocusContinuityAnalyzer();
+  }
 
   /**
-   * Determine if should switch from current task to new task
+   * Determine if should switch from current task to new task (LLM-based)
+   */
+  async shouldSwitchWithLLM(
+    currentTask: Task | null,
+    newTask: Task,
+    currentFocus: FocusState | null
+  ): Promise<ContinuityAssessment> {
+    return await this.continuityAnalyzer.assessContinuity(
+      currentFocus,
+      currentTask,
+      newTask
+    );
+  }
+
+  /**
+   * Determine if should switch from current task to new task (legacy rule-based, kept for fallback)
    */
   shouldSwitch(currentTask: Task | null, newTask: Task): boolean {
     // No current task - can switch
@@ -53,7 +75,7 @@ export class TaskSwitcher {
   }
 
   /**
-   * Get urgency level as number for comparison
+   * Get urgency level as number for comparison (legacy, kept for fallback)
    */
   private getUrgencyLevel(urgency: TaskUrgency): number {
     const levels: Record<TaskUrgency, number> = {

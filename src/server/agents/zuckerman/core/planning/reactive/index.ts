@@ -5,3 +5,4 @@
 
 export * from "./switcher.js";
 export * from "./interrupt.js";
+export * from "./continuity.js";

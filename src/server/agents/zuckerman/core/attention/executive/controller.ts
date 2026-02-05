@@ -97,6 +97,33 @@ export class ExecutiveController {
   }
 
   /**
+   * Update focus task from planning system
+   * Preserves topic continuity while updating active task
+   */
+  updateTaskFocus(
+    agentId: string,
+    taskTitle: string,
+    urgency?: FocusState["urgency"],
+    conversationId?: string
+  ): FocusState | null {
+    if (!this.config.enabled || !this.config.focusPersistence) {
+      return null;
+    }
+    return this.focusTracker.updateTaskFocus(agentId, taskTitle, urgency, conversationId);
+  }
+
+  /**
+   * Clear task focus (when task completes)
+   * Keeps topic but removes task reference
+   */
+  clearTaskFocus(agentId: string): FocusState | null {
+    if (!this.config.enabled || !this.config.focusPersistence) {
+      return null;
+    }
+    return this.focusTracker.clearTaskFocus(agentId);
+  }
+
+  /**
    * Get filter criteria for selective attention
    */
   getFilterCriteria(agentId: string) {

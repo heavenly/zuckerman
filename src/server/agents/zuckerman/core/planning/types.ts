@@ -67,6 +67,29 @@ export interface PlanningStats {
 }
 
 /**
+ * Pending interruption - waiting for user confirmation
+ */
+export interface PendingInterruption {
+  currentTask: Task;
+  newTask: Task;
+  assessment: {
+    continuityStrength: number;
+    shouldSwitch: boolean;
+    reasoning: string;
+  };
+  createdAt: number;
+  conversationId?: string;
+}
+
+/**
+ * Process queue result - can be task or pending interruption
+ */
+export type ProcessQueueResult = 
+  | { type: "task"; task: Task }
+  | { type: "pending_interruption"; interruption: PendingInterruption }
+  | { type: "none"; task: null };
+
+/**
  * Planning State - Overall planning state per agent
  */
 export interface PlanningState {

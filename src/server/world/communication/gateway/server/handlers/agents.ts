@@ -371,5 +371,85 @@ export function createAgentHandlers(
         });
       }
     },
+
+    "agent.step.confirm": async ({ respond, params }) => {
+      const agentId = params?.agentId as string | undefined;
+      const stepId = params?.stepId as string | undefined;
+      const approved = params?.approved as boolean | undefined;
+
+      if (!agentId) {
+        respond(false, undefined, {
+          code: "INVALID_REQUEST",
+          message: "Missing agentId",
+        });
+        return;
+      }
+
+      if (!stepId) {
+        respond(false, undefined, {
+          code: "INVALID_REQUEST",
+          message: "Missing stepId",
+        });
+        return;
+      }
+
+      if (approved === undefined) {
+        respond(false, undefined, {
+          code: "INVALID_REQUEST",
+          message: "Missing approved parameter",
+        });
+        return;
+      }
+
+      try {
+        const runtime = await agentFactory.getRuntime(agentId);
+        if (!runtime) {
+          respond(false, undefined, {
+            code: "AGENT_NOT_FOUND",
+            message: `Agent "${agentId}" not found`,
+          });
+          return;
+        }
+
+        // Check if runtime has planning manager
+        const planningManager = (runtime as any).getPlanningManager?.();
+        if (!planningManager) {
+          respond(false, undefined, {
+            code: "FEATURE_NOT_SUPPORTED",
+            message: `Agent "${agentId}" does not support step confirmation`,
+          });
+          return;
+        }
+
+        const reason = params?.reason as string | undefined;
+
+        if (approved) {
+          const success = planningManager.approveStepConfirmation(stepId);
+          if (!success) {
+            respond(false, undefined, {
+              code: "CONFIRMATION_NOT_FOUND",
+              message: `No pending confirmation found for step "${stepId}"`,
+            });
+            return;
+          }
+          respond(true, { approved: true, stepId });
+        } else {
+          const success = planningManager.rejectStepConfirmation(stepId, reason);
+          if (!success) {
+            respond(false, undefined, {
+              code: "CONFIRMATION_NOT_FOUND",
+              message: `No pending confirmation found for step "${stepId}"`,
+            });
+            return;
+          }
+          respond(true, { approved: false, stepId, reason });
+        }
+      } catch (err) {
+        respond(false, undefined, {
+          code: "ERROR",
+          message: err instanceof Error ? err.message : "Failed to confirm step",
+        });
+      }
+    },
   };
 }

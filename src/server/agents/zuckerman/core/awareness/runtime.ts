@@ -49,8 +49,11 @@ export class ZuckermanAwareness implements AgentRuntime {
       focusPersistence: true,
     });
     
-    // Initialize planning manager
-    this.planningManager = new PlanningManager(this.agentId);
+    // Initialize planning manager WITH attention controller for bidirectional feedback
+    this.planningManager = new PlanningManager(this.agentId, this.attentionController);
+    
+    // Set bidirectional references
+    this.planningManager.setAttentionController(this.attentionController);
     
     // Get agent directory from discovery service
     const metadata = agentDiscovery.getMetadata(this.agentId);
@@ -133,7 +136,7 @@ export class ZuckermanAwareness implements AgentRuntime {
   }
 
   async run(params: AgentRunParams): Promise<AgentRunResult> {
-    const { conversationId, message, temperature, securityContext, stream } = params;
+    let { conversationId, message, temperature, securityContext, stream } = params;
     const runId = randomUUID();
 
     // Record agent run start
@@ -186,7 +189,7 @@ export class ZuckermanAwareness implements AgentRuntime {
       const systemPrompt = await this.buildSystemPrompt(prompts, homedirDir);
 
       // Process attention - analyze focus and urgency
-      const attentionState = await this.attentionController.processMessage(
+      let attentionState = await this.attentionController.processMessage(
         message,
         this.agentId,
         conversationId
@@ -195,6 +198,109 @@ export class ZuckermanAwareness implements AgentRuntime {
       // Update planning manager with current focus
       if (attentionState?.focus) {
         this.planningManager.setFocus(attentionState.focus);
+      }
+
+      // Check if there's a pending interruption confirmation to handle
+      const pendingInterruption = this.planningManager.getPendingInterruption();
+      let isConfirmedInterruption = false;
+      let confirmedTaskSteps: TaskStep[] = [];
+      
+      if (pendingInterruption) {
+        // User is responding to interruption confirmation
+        const confirmationResult = await this.planningManager.handleInterruptionConfirmation(
+          message,
+          conversationId
+        );
+
+        if (confirmationResult.proceed && confirmationResult.newTask) {
+          // User confirmed - proceed with new task
+          // Task is already switched and started in handleInterruptionConfirmation
+          isConfirmedInterruption = true;
+          
+          // Decompose steps for the confirmed task
+          confirmedTaskSteps = await this.planningManager.decomposeTask(
+            confirmationResult.newTask.title,
+            confirmationResult.newTask.urgency,
+            attentionState?.focus || null
+          );
+
+          // Set steps for the executor
+          const executor = (this.planningManager as any).executor;
+          if (executor && executor.setSteps) {
+            executor.setSteps(confirmedTaskSteps);
+          }
+
+          // Stream steps to user
+          if (stream && confirmedTaskSteps.length > 0) {
+            await stream({
+              type: "lifecycle",
+              data: {
+                phase: "start",
+                runId,
+                steps: confirmedTaskSteps.map(s => ({
+                  id: s.id,
+                  title: s.title,
+                  description: s.description,
+                  order: s.order,
+                  requiresConfirmation: s.requiresConfirmation,
+                  confirmationReason: s.confirmationReason,
+                })),
+              },
+            });
+          }
+
+          // Stream initial step
+          const currentStep = this.planningManager.getCurrentStep();
+          if (stream && currentStep) {
+            await stream({
+              type: "lifecycle",
+              data: {
+                runId,
+                step: {
+                  id: currentStep.id,
+                  title: currentStep.title,
+                  description: currentStep.description,
+                  order: currentStep.order,
+                  requiresConfirmation: currentStep.requiresConfirmation,
+                  confirmationReason: currentStep.confirmationReason,
+                },
+                progress: 0,
+              },
+            });
+          }
+
+          // Use confirmed task title for LLM processing
+          message = confirmationResult.newTask.title;
+          // Re-process attention for the confirmed task
+          attentionState = await this.attentionController.processMessage(
+            message,
+            this.agentId,
+            conversationId
+          );
+          if (attentionState?.focus) {
+            this.planningManager.setFocus(attentionState.focus);
+          }
+        } else {
+          // User declined or said later
+          if (stream) {
+            await stream({
+              type: "lifecycle",
+              data: {
+                phase: "end",
+                runId,
+              },
+            });
+          }
+
+          const responseMessage = confirmationResult.addToQueue
+            ? "Understood. I'll add that to my queue and continue with the current task."
+            : "Understood. I'll continue with my current task.";
+
+          return {
+            response: responseMessage,
+            runId,
+          };
+        }
       }
 
       // Tactical planning: decompose task into steps
@@ -226,43 +332,79 @@ export class ZuckermanAwareness implements AgentRuntime {
           });
         }
 
-        // Add task to planning queue
-        currentTaskId = this.planningManager.addTask({
-          title: message,
-          description: message,
-          type: "immediate",
-          source: "user",
-          urgency: attentionState.alerting.urgency,
-        });
+        // Add task to planning queue (skip if confirmed interruption - task already added)
+        if (!isConfirmedInterruption) {
+          currentTaskId = this.planningManager.addTask({
+            title: message,
+            description: message,
+            type: "immediate",
+            source: "user",
+            urgency: attentionState.alerting.urgency,
+          });
 
-        // Process queue to start task execution
-        const taskToExecute = this.planningManager.processQueue();
-        if (taskToExecute && taskToExecute.id === currentTaskId) {
-          // Set steps for the executor
-          const executor = (this.planningManager as any).executor;
-          if (executor && executor.setSteps) {
-            executor.setSteps(steps);
-          }
+          // Process queue to start task execution (async - uses LLM for continuity assessment)
+          const queueResult = await this.planningManager.processQueue(conversationId);
+        
+        // Handle pending interruption
+        if (queueResult.type === "pending_interruption") {
+          // Generate confirmation message
+          const confirmationMessage = await this.planningManager.generateInterruptionConfirmation(
+            queueResult.interruption.currentTask,
+            queueResult.interruption.newTask.title,
+            queueResult.interruption.newTask.urgency
+          );
 
-          // Stream initial step if available
-          const currentStep = this.planningManager.getCurrentStep();
-          if (stream && currentStep) {
+          if (stream) {
             await stream({
               type: "lifecycle",
               data: {
+                phase: "end",
                 runId,
-                step: {
-                  id: currentStep.id,
-                  title: currentStep.title,
-                  description: currentStep.description,
-                  order: currentStep.order,
-                  requiresConfirmation: currentStep.requiresConfirmation,
-                  confirmationReason: currentStep.confirmationReason,
-                },
-                progress: 0,
               },
             });
           }
+
+          return {
+            response: confirmationMessage,
+            runId,
+          };
+        }
+
+          // Handle task execution
+          if (queueResult.type === "task" && queueResult.task) {
+            // If this is the new task we just added, set steps
+            if (queueResult.task.id === currentTaskId) {
+              // Set steps for the executor
+              const executor = (this.planningManager as any).executor;
+              if (executor && executor.setSteps) {
+                executor.setSteps(steps);
+              }
+
+              // Stream initial step if available
+              const currentStep = this.planningManager.getCurrentStep();
+              if (stream && currentStep) {
+                await stream({
+                  type: "lifecycle",
+                  data: {
+                    runId,
+                    step: {
+                      id: currentStep.id,
+                      title: currentStep.title,
+                      description: currentStep.description,
+                      order: currentStep.order,
+                      requiresConfirmation: currentStep.requiresConfirmation,
+                      confirmationReason: currentStep.confirmationReason,
+                    },
+                    progress: 0,
+                  },
+                });
+              }
+            }
+          }
+        } else if (isConfirmedInterruption) {
+          // For confirmed interruption, steps are already set above
+          // Use confirmed task steps (already set in executor above)
+          steps = confirmedTaskSteps;
         }
       }
 
@@ -723,7 +865,8 @@ export class ZuckermanAwareness implements AgentRuntime {
             
             const fallbackTask = await this.planningManager.handleStepFailure(
               currentStep,
-              errorMsg
+              errorMsg,
+              conversationId
             );
             
             if (stream) {
