@@ -18,6 +18,8 @@ import { runSleepModeIfNeeded } from "@server/agents/zuckerman/sleep/index.js";
 import { activityRecorder } from "@server/world/activity/index.js";
 import { resolveMemorySearchConfig } from "@server/agents/zuckerman/core/memory/config.js";
 import { ExecutiveController } from "../attention/index.js";
+import { PlanningManager } from "../planning/index.js";
+import type { TaskStep } from "../planning/tactical/index.js";
 
 export class ZuckermanAwareness implements AgentRuntime {
   readonly agentId = "zuckerman";
@@ -29,6 +31,7 @@ export class ZuckermanAwareness implements AgentRuntime {
 
   private memoryManager: UnifiedMemoryManager | null = null;
   private attentionController: ExecutiveController;
+  private planningManager: PlanningManager;
   
   // Load prompts from agent's core directory (where markdown files are)
   private readonly agentDir: string;
@@ -45,6 +48,9 @@ export class ZuckermanAwareness implements AgentRuntime {
       enabled: true,
       focusPersistence: true,
     });
+    
+    // Initialize planning manager
+    this.planningManager = new PlanningManager(this.agentId);
     
     // Get agent directory from discovery service
     const metadata = agentDiscovery.getMetadata(this.agentId);
@@ -90,7 +96,6 @@ export class ZuckermanAwareness implements AgentRuntime {
         const resolvedConfig = resolveMemorySearchConfig(memorySearchConfig, homedirDir, this.agentId);
         if (resolvedConfig) {
           await this.getMemoryManager().initializeDatabase(resolvedConfig, this.agentId);
-          this.dbInitialized = true;
         }
       }
     } catch (error) {
@@ -180,7 +185,88 @@ export class ZuckermanAwareness implements AgentRuntime {
       // ensuring we always have the latest semantic memories
       const systemPrompt = await this.buildSystemPrompt(prompts, homedirDir);
 
-      // Process attention - analyze focus and urgency      
+      // Process attention - analyze focus and urgency
+      const attentionState = await this.attentionController.processMessage(
+        message,
+        this.agentId,
+        conversationId
+      );
+
+      // Update planning manager with current focus
+      if (attentionState?.focus) {
+        this.planningManager.setFocus(attentionState.focus);
+      }
+
+      // Tactical planning: decompose task into steps
+      let steps: TaskStep[] = [];
+      let currentTaskId: string | null = null;
+      if (attentionState) {
+        steps = await this.planningManager.decomposeTask(
+          message,
+          attentionState.alerting.urgency,
+          attentionState.focus
+        );
+
+        // Stream steps to user
+        if (stream && steps.length > 0) {
+          await stream({
+            type: "lifecycle",
+            data: {
+              phase: "start",
+              runId,
+              steps: steps.map(s => ({
+                id: s.id,
+                title: s.title,
+                description: s.description,
+                order: s.order,
+                requiresConfirmation: s.requiresConfirmation,
+                confirmationReason: s.confirmationReason,
+              })),
+            },
+          });
+        }
+
+        // Add task to planning queue
+        currentTaskId = this.planningManager.addTask({
+          title: message,
+          description: message,
+          type: "immediate",
+          source: "user",
+          urgency: attentionState.alerting.urgency,
+        });
+
+        // Process queue to start task execution
+        const taskToExecute = this.planningManager.processQueue();
+        if (taskToExecute && taskToExecute.id === currentTaskId) {
+          // Set steps for the executor
+          const executor = (this.planningManager as any).executor;
+          if (executor && executor.setSteps) {
+            executor.setSteps(steps);
+          }
+
+          // Stream initial step if available
+          const currentStep = this.planningManager.getCurrentStep();
+          if (stream && currentStep) {
+            await stream({
+              type: "lifecycle",
+              data: {
+                runId,
+                step: {
+                  id: currentStep.id,
+                  title: currentStep.title,
+                  description: currentStep.description,
+                  order: currentStep.order,
+                  requiresConfirmation: currentStep.requiresConfirmation,
+                  confirmationReason: currentStep.confirmationReason,
+                },
+                progress: 0,
+              },
+            });
+          }
+        }
+      }
+
+      // Get memory context using attention allocation
       const retrievedMemoriesText = await this.getMemoryManager().getRelevantMemoryContext({
         query: message,
         types: ["semantic", "episodic", "procedural"],
@@ -433,6 +519,27 @@ export class ZuckermanAwareness implements AgentRuntime {
       toolCalls,
     });
 
+    // Check if current step requires confirmation
+    const currentStep = this.planningManager.getCurrentStep();
+    if (currentStep?.requiresConfirmation && stream) {
+      // Stream confirmation request
+      await stream({
+        type: "lifecycle",
+        data: {
+          runId,
+          step: {
+            id: currentStep.id,
+            title: currentStep.title,
+            requiresConfirmation: true,
+            confirmationReason: currentStep.confirmationReason,
+          },
+          confirmationRequired: true,
+        },
+      });
+      // Note: In a real implementation, we'd wait for user confirmation here
+      // For now, we proceed automatically (can be enhanced later)
+    }
+
     // Execute tools
     const toolCallResults = [];
     for (const toolCall of toolCalls) {
@@ -555,6 +662,89 @@ export class ZuckermanAwareness implements AgentRuntime {
           tool.definition.name,
           result,
         );
+
+        // Track step progress after tool execution
+        const currentStep = this.planningManager.getCurrentStep();
+        if (currentStep) {
+          // Check if tool execution was successful
+          const isSuccess = typeof result === "object" && result && "success" in result
+            ? (result as { success?: boolean }).success !== false
+            : true;
+
+          if (isSuccess) {
+            // Complete current step on successful tool execution
+            this.planningManager.completeCurrentStep(result);
+            
+            // Stream step completion and progress
+            if (stream) {
+              const steps = this.planningManager.getSteps();
+              const progress = steps.length > 0
+                ? Math.round((steps.filter(s => s.completed).length / steps.length) * 100)
+                : 0;
+              
+              await stream({
+                type: "lifecycle",
+                data: {
+                  runId,
+                  step: {
+                    id: currentStep.id,
+                    title: currentStep.title,
+                    completed: true,
+                  },
+                  progress,
+                },
+              });
+
+              // Stream next step if available
+              const nextStep = this.planningManager.getCurrentStep();
+              if (nextStep) {
+                await stream({
+                  type: "lifecycle",
+                  data: {
+                    runId,
+                    step: {
+                      id: nextStep.id,
+                      title: nextStep.title,
+                      description: nextStep.description,
+                      order: nextStep.order,
+                      requiresConfirmation: nextStep.requiresConfirmation,
+                      confirmationReason: nextStep.confirmationReason,
+                    },
+                    progress,
+                  },
+                });
+              }
+            }
+          } else {
+            // Handle step failure with contingency planning
+            const errorMsg = typeof result === "object" && result && "error" in result
+              ? String((result as { error?: string }).error || "Tool execution failed")
+              : "Tool execution failed";
+            
+            const fallbackTask = await this.planningManager.handleStepFailure(
+              currentStep,
+              errorMsg
+            );
+            
+            if (stream) {
+              await stream({
+                type: "lifecycle",
+                data: {
+                  runId,
+                  step: {
+                    id: currentStep.id,
+                    title: currentStep.title,
+                    error: errorMsg,
+                  },
+                  fallbackTask: fallbackTask ? {
+                    id: fallbackTask.id,
+                    title: fallbackTask.title,
+                  } : undefined,
+                },
+              });
+            }
+          }
+        }
 
         // Convert result to string for LLM
         let resultContent: string;

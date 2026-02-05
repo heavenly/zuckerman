@@ -17,6 +17,31 @@ export interface StreamEvent {
     tokensUsed?: number;
     toolsUsed?: string[];
     response?: string;
+    // Planning/step progress fields
+    steps?: Array<{
+      id: string;
+      title: string;
+      description?: string;
+      order: number;
+      requiresConfirmation: boolean;
+      confirmationReason?: string;
+    }>;
+    step?: {
+      id: string;
+      title: string;
+      description?: string;
+      order?: number;
+      requiresConfirmation?: boolean;
+      confirmationReason?: string;
+      completed?: boolean;
+      error?: string;
+    };
+    progress?: number;
+    confirmationRequired?: boolean;
+    fallbackTask?: {
+      id: string;
+      title: string;
+    };
   };
 }
 

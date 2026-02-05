@@ -269,6 +269,31 @@ export function useChat(
         toolResult?: unknown;
         phase?: "start" | "end" | "error";
         error?: string;
+        // Planning/step fields
+        steps?: Array<{
+          id: string;
+          title: string;
+          description?: string;
+          order: number;
+          requiresConfirmation: boolean;
+          confirmationReason?: string;
+        }>;
+        step?: {
+          id: string;
+          title: string;
+          description?: string;
+          order?: number;
+          requiresConfirmation?: boolean;
+          confirmationReason?: string;
+          completed?: boolean;
+          error?: string;
+        };
+        progress?: number;
+        confirmationRequired?: boolean;
+        fallbackTask?: {
+          id: string;
+          title: string;
+        };
       };
 
       if (payload.conversationId !== currentConversationIdRef.current) return;
@@ -290,6 +315,49 @@ export function useChat(
               };
               newMessages.push(thinkingMessage);
             }
+            
+            // Handle step planning - if steps are provided, create a planning message
+            if (payload.steps && payload.steps.length > 0) {
+              // Remove thinking indicator and add planning message
+              if (thinkingIndex !== -1) {
+                newMessages.splice(thinkingIndex, 1);
+              }
+              
+              const planningMessage: Message = {
+                role: "assistant",
+                content: "📋 Planning task execution...",
+                timestamp: Date.now(),
+                steps: payload.steps.map(s => ({
+                  id: s.id,
+                  title: s.title,
+                  description: s.description,
+                  order: s.order,
+                  requiresConfirmation: s.requiresConfirmation,
+                  confirmationReason: s.confirmationReason,
+                  completed: false,
+                })),
+                stepProgress: 0,
+              };
+              
+              // Check if there's already a planning message for this run
+              const existingPlanningIndex = newMessages.findIndex(
+                (msg) => msg.role === "assistant" && msg.steps && (msg as any).streamingRunId === payload.runId
+              );
+              
+              if (existingPlanningIndex === -1) {
+                newMessages.push({
+                  ...planningMessage,
+                  streamingRunId: payload.runId,
+                } as Message & { streamingRunId?: string });
+              } else {
+                newMessages[existingPlanningIndex] = {
+                  ...newMessages[existingPlanningIndex],
+                  ...planningMessage,
+                  streamingRunId: payload.runId,
+                } as Message & { streamingRunId?: string };
+              }
+            }
+            
             return newMessages;
           });
         } else if (payload.phase === "end") {
@@ -311,6 +379,55 @@ export function useChat(
             }
             return newMessages;
           });
+        } else {
+          // Handle step updates (no phase, but has step data)
+          if (payload.step || payload.progress !== undefined || payload.confirmationRequired) {
+            setMessages((prev) => {
+              const newMessages = [...prev];
+              const planningIndex = newMessages.findIndex(
+                (msg) => msg.role === "assistant" && msg.steps && (msg as any).streamingRunId === payload.runId
+              );
+              
+              if (planningIndex !== -1) {
+                const planningMsg = newMessages[planningIndex];
+                const updatedSteps = planningMsg.steps ? [...planningMsg.steps] : [];
+                
+                // Update step if provided
+                if (payload.step) {
+                  const stepIndex = updatedSteps.findIndex(s => s.id === payload.step!.id);
+                  if (stepIndex !== -1) {
+                    updatedSteps[stepIndex] = {
+                      ...updatedSteps[stepIndex],
+                      ...payload.step,
+                    };
+                  } else {
+                    // Add new step if not found
+                    updatedSteps.push({
+                      id: payload.step.id,
+                      title: payload.step.title,
+                      description: payload.step.description,
+                      order: payload.step.order ?? updatedSteps.length,
+                      completed: payload.step.completed ?? false,
+                      requiresConfirmation: payload.step.requiresConfirmation,
+                      confirmationReason: payload.step.confirmationReason,
+                      error: payload.step.error,
+                    });
+                  }
+                }
+                
+                newMessages[planningIndex] = {
+                  ...planningMsg,
+                  steps: updatedSteps,
+                  currentStep: payload.step || planningMsg.currentStep,
+                  stepProgress: payload.progress !== undefined ? payload.progress : planningMsg.stepProgress,
+                  confirmationRequired: payload.confirmationRequired ?? planningMsg.confirmationRequired,
+                  fallbackTask: payload.fallbackTask || planningMsg.fallbackTask,
+                };
+              }
+              
+              return newMessages;
+            });
+          }
         }
       } else if (eventType === "token" && payload.token) {
         const token = payload.token;
