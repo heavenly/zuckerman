@@ -23,7 +23,7 @@ import type {
   BaseMemory,
 } from "./types.js";
 
-import { extractMemoriesFromMessage } from "./memory-classifier.js";
+import { rememberMemoriesFromMessage } from "./memory-classifier.js";
 import type { ResolvedMemorySearchConfig } from "./config.js";
 import { initializeDatabase } from "./retrieval/db.js";
 import { existsSync, readFileSync } from "node:fs";
@@ -155,7 +155,7 @@ export class UnifiedMemoryManager implements MemoryManager {
   }
 
   /**
-   * Process a new user message and extract/save important memories
+   * Process a new user message and remember/save important memories
    * This is called by the runtime when a new user message arrives
    */
   async onNewMessage(
@@ -164,18 +164,18 @@ export class UnifiedMemoryManager implements MemoryManager {
     conversationContext?: string
   ): Promise<void> {
     try {
-      const extractionResult = await extractMemoriesFromMessage(
+      const rememberResult = await rememberMemoriesFromMessage(
         userMessage,
         conversationContext
       );
 
-      if (extractionResult.hasImportantInfo && extractionResult.memories.length > 0) {
+      if (rememberResult.hasImportantInfo && rememberResult.memories.length > 0) {
         const now = Date.now();
 
-        for (const memory of extractionResult.memories) {
+        for (const memory of rememberResult.memories) {
           // Save to semantic memory (long-term): facts, preferences, learnings
           if (memory.type === "fact" || memory.type === "preference" || memory.type === "learning") {
-            // Use structured data if available for better fact extraction
+            // Use structured data if available for better fact remembering
             const fact = memory.structuredData
               ? Object.entries(memory.structuredData)
                 .filter(([k]) => k !== "field")
@@ -205,9 +205,9 @@ export class UnifiedMemoryManager implements MemoryManager {
           }
         }
       }
-    } catch (extractionError) {
-      // Don't fail if extraction fails - just log and continue
-      console.warn(`[UnifiedMemoryManager] Memory extraction failed:`, extractionError);
+    } catch (rememberError) {
+      // Don't fail if remembering fails - just log and continue
+      console.warn(`[UnifiedMemoryManager] Memory remembering failed:`, rememberError);
     }
   }
 

@@ -130,7 +130,7 @@ export interface MemoryRetrievalResult {
  */
 export interface MemoryManager {
   /**
-   * Process a new user message and extract/save important memories
+   * Process a new user message and remember/save important memories
    * This is called by the runtime when a new user message arrives
    */
   onNewMessage(

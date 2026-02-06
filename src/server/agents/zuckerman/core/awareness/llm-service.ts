@@ -1,10 +1,17 @@
 import type { LLMMessage, LLMTool } from "@server/world/providers/llm/types.js";
 import { LLMModel } from "@server/world/providers/llm/index.js";
-import type { StreamEventEmitter } from "./stream-emitter.js";
+import type { StreamEventEmitter } from "@server/world/communication/stream-emitter.js";
+import type { RunContext } from "./context.js";
+
+export type ToolCall = {
+  id: string;
+  name: string;
+  arguments: string;
+};
 
 export interface LLMCallResult {
   content: string;
-  toolCalls?: any[];
+  toolCalls?: ToolCall[];
   tokensUsed?: { total: number };
 }
 
@@ -14,6 +21,35 @@ export class LLMService {
     private streamEmitter: StreamEventEmitter,
     private runId: string
   ) {}
+
+  /**
+   * Build messages array for LLM call from context
+   */
+  buildMessages(context: RunContext): LLMMessage[] {
+    const messages: LLMMessage[] = [
+      { role: "system", content: context.systemPrompt },
+    ];
+
+    // Add conversation history
+    if (context.conversation) {
+      for (const msg of context.conversation.messages) {
+        messages.push({
+          role: msg.role === "user" ? "user" : "assistant",
+          content: msg.content,
+        });
+      }
+    }
+    
+    // Add relevant memories if available
+    if (context.relevantMemoriesText) {
+      messages.push({ 
+        role: "system", 
+        content: context.relevantMemoriesText 
+      });
+    }
+
+    return messages;
+  }
 
   /**
    * Call LLM with streaming support when stream callback is provided

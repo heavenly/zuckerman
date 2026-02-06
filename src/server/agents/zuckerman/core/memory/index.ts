@@ -15,7 +15,7 @@ export * from "./stores/emotional-store.js";
 // Memory Manager (Unified Interface)
 export * from "./manager.js"; // Unified Memory Manager
 
-// Memory Extraction (Real-time)
+// Memory Remembering (Real-time)
 export * from "./memory-classifier.js";
 
 // Services: Encoding, Storage, Retrieval

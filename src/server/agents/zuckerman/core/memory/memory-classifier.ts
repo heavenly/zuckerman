@@ -1,38 +1,38 @@
 /**
- * Smart Memory Extraction Service
- * Uses LLM to intelligently detect and extract important information from user messages
+ * Smart Memory Remembering Service
+ * Uses LLM to intelligently detect and remember important information from user messages
  */
 
 import type { LLMMessage } from "@server/world/providers/llm/types.js";
 import { LLMManager } from "@server/world/providers/llm/index.js";
 
-export interface ExtractedMemory {
+export interface RememberedMemory {
   type: "fact" | "preference" | "decision" | "event" | "learning";
   content: string;
   importance: number; // 0-1
   structuredData?: Record<string, unknown>; // e.g., {name: "dvir", field: "name"}
 }
 
-export interface ExtractionResult {
-  memories: ExtractedMemory[];
+export interface RememberResult {
+  memories: RememberedMemory[];
   memoriesByCategory: {
-    fact?: ExtractedMemory[];
-    preference?: ExtractedMemory[];
-    decision?: ExtractedMemory[];
-    event?: ExtractedMemory[];
-    learning?: ExtractedMemory[];
+    fact?: RememberedMemory[];
+    preference?: RememberedMemory[];
+    decision?: RememberedMemory[];
+    event?: RememberedMemory[];
+    learning?: RememberedMemory[];
   };
   hasImportantInfo: boolean;
 }
 
 /**
- * Extract important memories from a user message using LLM
+ * Remember important memories from a user message using LLM
  */
-export async function extractMemoriesFromMessage(
+export async function rememberMemoriesFromMessage(
   userMessage: string,
   conversationContext?: string
-): Promise<ExtractionResult> {
-  // Select model for memory extraction (fastCheap for efficiency)
+): Promise<RememberResult> {
+  // Select model for memory remembering (fastCheap for efficiency)
   const llmManager = LLMManager.getInstance();
   const model = await llmManager.fastCheap();
   const systemPrompt = `You are the part of the brain that estimates what information is important enough to remember. Like the hippocampus and prefrontal cortex working together, you evaluate incoming information and determine what should be stored in memory for future recall.
@@ -89,8 +89,8 @@ Return ONLY valid JSON object, no other text.`;
   try {
     const response = await model.call({
       messages,
-      temperature: 0.3, // Low temperature for consistent extraction
-      maxTokens: 500, // Small response for extraction
+      temperature: 0.3, // Low temperature for consistent remembering
+      maxTokens: 500, // Small response for remembering
     });
 
     const content = response.content.trim();
@@ -107,8 +107,8 @@ Return ONLY valid JSON object, no other text.`;
     }
     
     // Process each category
-    const memoriesByCategory: ExtractionResult["memoriesByCategory"] = {};
-    const memories: ExtractedMemory[] = [];
+    const memoriesByCategory: RememberResult["memoriesByCategory"] = {};
+    const memories: RememberedMemory[] = [];
     const validCategories = ["fact", "preference", "decision", "event", "learning"];
     
     for (const category of validCategories) {
@@ -118,12 +118,12 @@ Return ONLY valid JSON object, no other text.`;
             return (
               m &&
               typeof m === "object" &&
-              typeof (m as ExtractedMemory).content === "string" &&
-              typeof (m as ExtractedMemory).importance === "number"
+              typeof (m as RememberedMemory).content === "string" &&
+              typeof (m as RememberedMemory).importance === "number"
             );
           })
           .map((m: Record<string, unknown>) => ({
-            type: category as ExtractedMemory["type"],
+            type: category as RememberedMemory["type"],
             content: m.content as string,
             importance: m.importance as number,
             structuredData: m.structuredData as Record<string, unknown> | undefined,
@@ -142,7 +142,7 @@ Return ONLY valid JSON object, no other text.`;
       hasImportantInfo: memories.length > 0,
     };
   } catch (error) {
-    console.error(`[MemoryExtraction] Error extracting memories:`, error);
+    console.error(`[MemoryRemember] Error remembering memories:`, error);
     throw error;
   }
 }
