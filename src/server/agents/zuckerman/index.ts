@@ -1,3 +1,6 @@
-export * from "./core/index.js";
-export * from "./tools/index.js";
-export * from "./core/awareness/runtime.js"; // Re-exports Awareness
+// Export public API only
+export { AgentService } from "./agent-service.js";
+
+// Internal modules - not exported to prevent external access
+// Tools and core modules are internal implementation details
+// External modules should use AgentService instead

@@ -21,7 +21,7 @@ import {
   resolveTranscriptPath,
   messagesToTranscriptEntries,
 } from "./transcript.js";
-import { activityRecorder } from "@server/world/activity/index.js";
+import { activityRecorder } from "@server/agents/zuckerman/activity/index.js";
 
 /**
  * Derive conversation key from agent ID and conversation type/label

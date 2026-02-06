@@ -1,6 +1,5 @@
 import type { Router, Route } from "./types.js";
 import type { ChannelMessage } from "@server/world/communication/messengers/channels/types.js";
-import { ConversationManager } from "@server/agents/zuckerman/conversations/index.js";
 import { resolveAgentRoute, resolveAgentHomedir } from "./resolver.js";
 import { loadConfig } from "@server/world/config/index.js";
 import type { AgentRuntimeFactory } from "@server/world/runtime/agents/index.js";
@@ -18,13 +17,6 @@ export class SimpleRouter implements Router {
 
   constructor(agentFactory: AgentRuntimeFactory) {
     this.agentFactory = agentFactory;
-  }
-
-  /**
-   * Get conversation manager for an agent
-   */
-  private getConversationManager(agentId: string): ConversationManager {
-    return this.agentFactory.getConversationManager(agentId);
   }
 
   addRoute(route: Route): void {
@@ -49,8 +41,11 @@ export class SimpleRouter implements Router {
     const config = await loadConfig();
     const defaultAgent = config.agents?.list?.find((a) => a.default) || config.agents?.list?.[0];
     const agentId = defaultAgent?.id || "zuckerman";
-    const conversationManager = this.getConversationManager(agentId);
-    const mainConversation = conversationManager.getOrCreateMainConversation(agentId);
+    const runtime = await this.agentFactory.getRuntime(agentId);
+    if (!runtime?.getOrCreateMainConversation) {
+      throw new Error(`Agent "${agentId}" not found or does not support conversation management`);
+    }
+    const mainConversation = runtime.getOrCreateMainConversation();
     return mainConversation.id;
   }
 
@@ -80,9 +75,15 @@ export class SimpleRouter implements Router {
       teamId: options?.teamId,
     });
 
-    // Get or create conversation for this route
-    const conversationManager = this.getConversationManager(route.agentId);
-    const conversation = conversationManager.getOrCreateMainConversation(route.agentId);
+    // Get or create conversation for this route using runtime router
+    const runtime = await this.agentFactory.getRuntime(route.agentId);
+    if (!runtime?.getOrCreateConversationByKey) {
+      throw new Error(`Agent "${route.agentId}" not found or does not support conversation routing`);
+    }
+    
+    // Determine conversation type from peer kind (already determined above)
+    const conversationType = peer?.kind === "group" ? "group" : peer?.kind === "channel" ? "channel" : "main";
+    const conversation = runtime.getOrCreateConversationByKey(route.conversationKey, conversationType);
     
     // Resolve homedir directory
     const homedir = resolveAgentHomedir(config, route.agentId);

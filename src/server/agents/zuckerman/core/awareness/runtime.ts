@@ -9,7 +9,7 @@ import { IdentityLoader, type LoadedPrompts } from "../identity/identity-loader.
 import { agentDiscovery } from "@server/agents/discovery.js";
 import { resolveAgentHomedir } from "@server/world/homedir/resolver.js";
 import { UnifiedMemoryManager } from "@server/agents/zuckerman/core/memory/manager.js";
-import { activityRecorder } from "@server/world/activity/index.js";
+import { activityRecorder } from "@server/agents/zuckerman/activity/index.js";
 import { resolveMemorySearchConfig } from "@server/agents/zuckerman/core/memory/config.js";
 import { LLMService } from "./llm-service.js";
 import type { RunContext } from "./context.js";
@@ -122,6 +122,24 @@ export class Awareness implements AgentRuntime {
     // Build awareness context (memory, messages, prompts)
     const context = await this.buildRunContext(params);
 
+    // Handle channel metadata if provided (for tool access)
+    if (params.channelMetadata && context.conversation) {
+      await this.conversationManager.updateChannelMetadata(
+        context.conversationId,
+        params.channelMetadata
+      );
+    }
+
+    // Persist user message to conversation (agent owns message persistence)
+    if (context.conversation) {
+      await this.conversationManager.addMessage(
+        context.conversationId,
+        "user",
+        context.message,
+        { runId: context.runId }
+      );
+    }
+
     // Get relevant memories directly from memory manager
     try {
       const memoryResult = await context.memoryManager.getRelevantMemories(context.message, {
@@ -137,7 +155,10 @@ export class Awareness implements AgentRuntime {
     // Initialize LLM service
     const llmService = new LLMService(context.llmModel, context.streamEmitter, context.runId);
 
-    // Build messages
+    // Get fresh conversation state (includes the user message we just added)
+    context.conversation = this.conversationManager.getConversation(context.conversationId) ?? null;
+
+    // Build messages from conversation history (includes user message)
     context.messages = llmService.buildMessages(context);
 
     // Remember memories from new message (async, don't block)
@@ -177,6 +198,22 @@ export class Awareness implements AgentRuntime {
 
         // If no tool calls, we're done
         if (!result.toolCalls || result.toolCalls.length === 0) {
+          // Add final assistant response to context messages
+          context.messages.push({
+            role: "assistant",
+            content: result.content,
+          });
+
+          // Persist final response to conversation
+          if (context.conversation) {
+            await this.conversationManager.addMessage(
+              context.conversationId,
+              "assistant",
+              result.content,
+              { runId: context.runId }
+            );
+          }
+
           await context.streamEmitter.emitLifecycleEnd(context.runId, result.tokensUsed?.total);
 
           await activityRecorder.recordAgentRunComplete(
@@ -196,20 +233,48 @@ export class Awareness implements AgentRuntime {
         }
 
         // Handle tool calls: add assistant message, execute tools, add results
-        context.messages.push({
-          role: "assistant",
+        const assistantMessageWithToolCalls = {
+          role: "assistant" as const,
           content: "",
           toolCalls: result.toolCalls.map(tc => ({
             id: tc.id,
             name: tc.name,
             arguments: typeof tc.arguments === "string" ? tc.arguments : JSON.stringify(tc.arguments),
           })),
-        });
+        };
+        context.messages.push(assistantMessageWithToolCalls);
+
+        // Persist assistant message with tool calls
+        if (context.conversation) {
+          await this.conversationManager.addMessage(
+            context.conversationId,
+            "assistant",
+            "",
+            {
+              toolCalls: assistantMessageWithToolCalls.toolCalls,
+              runId: context.runId,
+            }
+          );
+        }
 
         const toolCallResults = await toolService.executeTools(context, result.toolCalls);
 
+        // Add tool results to context and persist them
         for (const toolResult of toolCallResults) {
           context.messages.push(toolResult);
+
+          // Persist tool result
+          if (context.conversation) {
+            await this.conversationManager.addMessage(
+              context.conversationId,
+              "tool",
+              toolResult.content,
+              {
+                toolCallId: toolResult.toolCallId,
+                runId: context.runId,
+              }
+            );
+          }
         }
 
         // Loop continues to call LLM again with tool results
@@ -228,6 +293,24 @@ export class Awareness implements AgentRuntime {
       
       console.error(`[ZuckermanRuntime] Error in run:`, err);
       throw err;
+    }
+  }
+
+  /**
+   * Load agent prompts (public API for inspection/debugging)
+   */
+  async loadPrompts(): Promise<{ files: Map<string, string> }> {
+    const prompts = await this.identityLoader.loadPrompts(this.agentDir);
+    return { files: prompts.files };
+  }
+
+  /**
+   * Clear caches (public API for hot reload)
+   */
+  clearCache(): void {
+    // Clear identity loader cache if available
+    if (this.identityLoader.clearCache) {
+      this.identityLoader.clearCache(this.agentDir);
     }
   }
 }

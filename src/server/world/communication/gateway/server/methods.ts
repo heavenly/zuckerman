@@ -1,5 +1,4 @@
 import type { GatewayRequestHandlers } from "./types.js";
-import type { ConversationManager } from "@server/agents/zuckerman/conversations/index.js";
 import type { AgentRuntimeFactory } from "@server/world/runtime/agents/index.js";
 import type { ChannelRegistry } from "@server/world/communication/messengers/channels/index.js";
 import type { SimpleRouter } from "@server/world/communication/routing/index.js";
@@ -12,7 +11,6 @@ import { createTextToSpeechHandlers } from "./handlers/text-to-speech.js";
 import { createActivityHandlers } from "./handlers/activities.js";
 
 export interface CoreHandlersDeps {
-  conversationManager: ConversationManager;
   agentFactory: AgentRuntimeFactory;
   router: SimpleRouter;
   channelRegistry: ChannelRegistry | null;
@@ -20,13 +18,13 @@ export interface CoreHandlersDeps {
 }
 
 export function createCoreHandlers(deps: CoreHandlersDeps): GatewayRequestHandlers {
-  const { conversationManager, agentFactory, router, channelRegistry, broadcastEvent } = deps;
+  const { agentFactory, router, channelRegistry, broadcastEvent } = deps;
   
   const healthHandlers = createHealthHandlers();
   const conversationHandlers = createConversationHandlers(agentFactory);
-  const agentHandlers = createAgentHandlers(conversationManager, agentFactory);
+  const agentHandlers = createAgentHandlers(agentFactory);
   const channelHandlers = channelRegistry 
-    ? createChannelHandlers(channelRegistry, router, conversationManager, agentFactory, broadcastEvent)
+    ? createChannelHandlers(channelRegistry, router, agentFactory, broadcastEvent)
     : {};
   const configHandlers = createConfigHandlers();
   const textToSpeechHandlers = createTextToSpeechHandlers();

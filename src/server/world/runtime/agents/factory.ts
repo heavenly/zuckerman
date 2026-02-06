@@ -1,5 +1,4 @@
 import type { AgentRuntime } from "./types.js";
-import { ConversationManager } from "@server/agents/zuckerman/conversations/index.js";
 import { loadConfig } from "@server/world/config/index.js";
 import { getAgentRuntimeClass, getRegisteredAgentIds } from "@server/agents/index.js";
 
@@ -13,7 +12,7 @@ export interface AgentRuntimeFactoryOptions {
 /**
  * Check if a class is a valid AgentRuntime implementation
  */
-function isValidRuntimeClass(cls: unknown): cls is new (conversationManager?: ConversationManager) => AgentRuntime {
+function isValidRuntimeClass(cls: unknown): cls is new () => AgentRuntime {
   if (typeof cls !== "function") {
     return false;
   }
@@ -33,31 +32,19 @@ function isValidRuntimeClass(cls: unknown): cls is new (conversationManager?: Co
  */
 export class AgentRuntimeFactory {
   private runtimes = new Map<string, AgentRuntime>();
-  private conversationManagers = new Map<string, ConversationManager>();
   private loadErrors = new Map<string, string>();
 
   constructor(_options?: AgentRuntimeFactoryOptions) {
     // No initialization needed - agents are imported via registry
   }
 
-  /**
-   * Get or create conversation manager for an agent
-   */
-  getConversationManager(agentId: string): ConversationManager {
-    let manager = this.conversationManagers.get(agentId);
-    if (!manager) {
-      manager = new ConversationManager(agentId);
-      this.conversationManagers.set(agentId, manager);
-    }
-    return manager;
-  }
-
 
   /**
    * Get or create an agent runtime
+   * Handles all retry logic internally - callers should just call this once
    */
-  async getRuntime(agentId: string, clearCacheOnError = true): Promise<AgentRuntime | null> {
-    // Check cache
+  async getRuntime(agentId: string): Promise<AgentRuntime | null> {
+    // Check cache first
     const cached = this.runtimes.get(agentId);
     if (cached) {
       return cached;
@@ -66,7 +53,7 @@ export class AgentRuntimeFactory {
     // Clear any previous error for this agent
     this.loadErrors.delete(agentId);
 
-    // Load runtime from registry
+    // Try loading runtime
     try {
       const runtime = await this.createRuntime(agentId);
       if (runtime) {
@@ -82,26 +69,31 @@ export class AgentRuntimeFactory {
       
       return null;
     } catch (err) {
-      // Error is already logged and stored in createRuntime
-      // If we have a cached entry, try clearing and retrying
-      if (clearCacheOnError && this.runtimes.has(agentId)) {
-        console.warn(`[AgentFactory] Runtime for "${agentId}" failed to load, clearing cache and retrying...`);
-        this.clearCache(agentId);
-        try {
-          const retryRuntime = await this.createRuntime(agentId);
-          if (retryRuntime) {
-            this.runtimes.set(agentId, retryRuntime);
-            return retryRuntime;
-          }
-        } catch (retryErr) {
-          // Retry also failed, use the retry error if it's more specific
-          const retryError = retryErr instanceof Error ? retryErr.message : String(retryErr);
-          this.loadErrors.set(agentId, retryError);
-          throw retryErr;
+      // First attempt failed - try clearing cache and retrying once
+      const errorDetails = err instanceof Error ? err.message : String(err);
+      console.warn(`[AgentFactory] Runtime for "${agentId}" failed to load, clearing cache and retrying...`);
+      
+      // Clear cache and retry
+      this.clearCache(agentId);
+      this.loadErrors.delete(agentId);
+      
+      try {
+        const retryRuntime = await this.createRuntime(agentId);
+        if (retryRuntime) {
+          this.runtimes.set(agentId, retryRuntime);
+          return retryRuntime;
         }
+        
+        // Retry also returned null
+        const retryError = this.loadErrors.get(agentId) || errorDetails;
+        this.loadErrors.set(agentId, retryError);
+        return null;
+      } catch (retryErr) {
+        // Retry also failed
+        const retryError = retryErr instanceof Error ? retryErr.message : String(retryErr);
+        this.loadErrors.set(agentId, retryError);
+        throw retryErr;
       }
-      // Re-throw so caller can catch it
-      throw err;
     }
   }
 
@@ -128,8 +120,8 @@ export class AgentRuntimeFactory {
         return null;
       }
 
-      const conversationManager = this.getConversationManager(agentId);
-      const runtime = new RuntimeClass(conversationManager);
+      // Create runtime instance (AgentService creates ConversationManager internally)
+      const runtime = new RuntimeClass();
       
       // Initialize the runtime if it has an initialize method
       if (runtime.initialize) {

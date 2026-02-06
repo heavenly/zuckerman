@@ -1,10 +1,20 @@
 /**
  * Agent runtime entry point
- * Re-exports the Awareness runtime as ZuckermanRuntime for agent discovery
+ * Exports AgentService as the public API, with Awareness as internal implementation
+ * 
+ * NOTE: Awareness is only exported here for the registry/factory to use internally.
+ * External modules should import AgentService from the main index instead.
  */
+import { AgentService } from "./agent-service.js";
 import { Awareness } from "./core/awareness/runtime.js";
-export { Awareness as ZuckermanRuntime, Awareness };
+
+// Export service as the public API (for backward compatibility)
+export { AgentService as ZuckermanRuntime, AgentService };
 export type { LoadedPrompts } from "./core/identity/identity-loader.js";
 
-// Default export for easier discovery
-export default Awareness;
+// Export Awareness ONLY for internal registry use (not for external consumption)
+// External modules must use AgentService - this export is for factory/registry only
+export { Awareness };
+
+// Default export for easier discovery (returns service)
+export default AgentService;

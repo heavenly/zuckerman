@@ -1,22 +1,26 @@
 import type { GatewayRequestHandlers } from "../types.js";
+import type { AgentRuntime } from "@server/world/runtime/agents/types.js";
+import type { ConversationState, Conversation } from "@server/agents/zuckerman/conversations/types.js";
 import type { AgentRuntimeFactory } from "@server/world/runtime/agents/index.js";
 import { loadConfig } from "@server/world/config/index.js";
 
 /**
- * Find conversation across all agents' ConversationManagers
+ * Find conversation across all agents using runtime methods
  */
 async function findConversationAcrossAgents(
   agentFactory: AgentRuntimeFactory,
   conversationId: string
-): Promise<{ conversationManager: any; state: any } | null> {
+): Promise<{ runtime: AgentRuntime; state: ConversationState } | null> {
   const config = await loadConfig();
   const agentIds = config.agents?.list?.map((a) => a.id) || ["zuckerman"];
 
   for (const agentId of agentIds) {
-    const conversationManager = agentFactory.getConversationManager(agentId);
-    const state = conversationManager.getConversation(conversationId);
-    if (state) {
-      return { conversationManager, state };
+    const runtime = await agentFactory.getRuntime(agentId);
+    if (runtime && runtime.getConversation) {
+      const state = runtime.getConversation(conversationId);
+      if (state) {
+        return { runtime, state };
+      }
     }
   }
 
@@ -24,17 +28,19 @@ async function findConversationAcrossAgents(
 }
 
 /**
- * List all conversations across all agents
+ * List all conversations across all agents using runtime methods
  */
-async function listAllConversations(agentFactory: AgentRuntimeFactory): Promise<any[]> {
+async function listAllConversations(agentFactory: AgentRuntimeFactory): Promise<Conversation[]> {
   const config = await loadConfig();
   const agentIds = config.agents?.list?.map((a) => a.id) || ["zuckerman"];
-  const allConversations: any[] = [];
+  const allConversations: Conversation[] = [];
 
   for (const agentId of agentIds) {
-    const conversationManager = agentFactory.getConversationManager(agentId);
-    const conversations = conversationManager.listConversations();
-    allConversations.push(...conversations);
+    const runtime = await agentFactory.getRuntime(agentId);
+    if (runtime && runtime.listConversations) {
+      const conversations = runtime.listConversations();
+      allConversations.push(...conversations);
+    }
   }
 
   return allConversations;
@@ -47,12 +53,28 @@ export function createConversationHandlers(agentFactory: AgentRuntimeFactory): P
       const type = (params?.type as string | undefined) || "main";
       const agentId = (params?.agentId as string | undefined) || "zuckerman";
 
-      const conversationManager = agentFactory.getConversationManager(agentId);
-      const conversation = conversationManager.createConversation(
+      const runtime = await agentFactory.getRuntime(agentId);
+      if (!runtime) {
+        respond(false, undefined, {
+          code: "AGENT_NOT_FOUND",
+          message: `Agent "${agentId}" not found`,
+        });
+        return;
+      }
+
+      const conversation = runtime.createConversation?.(
         label || `conversation-${Date.now()}`,
         type as "main" | "group" | "channel",
         agentId,
       );
+      
+      if (!conversation) {
+        respond(false, undefined, {
+          code: "AGENT_ERROR",
+          message: `Agent "${agentId}" does not support conversation creation`,
+        });
+        return;
+      }
 
       respond(true, { conversation });
     },
@@ -103,7 +125,7 @@ export function createConversationHandlers(agentFactory: AgentRuntimeFactory): P
         return;
       }
 
-      const deleted = result.conversationManager.deleteConversation(id);
+      const deleted = result.runtime.deleteConversation?.(id) ?? false;
       if (!deleted) {
         respond(false, undefined, {
           code: "NOT_FOUND",

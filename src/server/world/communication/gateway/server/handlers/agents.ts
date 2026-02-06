@@ -1,5 +1,5 @@
 import type { GatewayRequestHandlers } from "../types.js";
-import { ConversationManager } from "@server/agents/zuckerman/conversations/index.js";
+import type { AgentRuntime } from "@server/world/runtime/agents/types.js";
 import { AgentRuntimeFactory } from "@server/world/runtime/agents/index.js";
 import { agentDiscovery } from "@server/agents/discovery.js";
 import { loadConfig } from "@server/world/config/index.js";
@@ -11,7 +11,6 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export function createAgentHandlers(
-  conversationManager: ConversationManager,
   agentFactory: AgentRuntimeFactory,
 ): Partial<GatewayRequestHandlers> {
   return {
@@ -90,53 +89,14 @@ export function createAgentHandlers(
       }
 
       try {
-        // Get the correct ConversationManager for this agent
-        const agentConversationManager = agentFactory.getConversationManager(agentId);
-        
-        // Get or create conversation
-        let conversation = agentConversationManager.getConversation(conversationId);
-        let actualConversationId = conversationId;
-        if (!conversation) {
-          const newConversation = agentConversationManager.createConversation(`conversation-${conversationId}`, "main", agentId);
-          conversation = agentConversationManager.getConversation(newConversation.id)!;
-          actualConversationId = newConversation.id; // Use the actual created conversation ID
-        }
-
-        // Resolve homedir directory for this agent
-        const homedir = resolveAgentHomedir(config, agentId);
-        const securityContext = await resolveSecurityContext(
-          config.security,
-          actualConversationId,
-          conversation.conversation.type,
-          agentId,
-          homedir,
-        );
-
-        // Add user message to conversation (use actualConversationId, not the original conversationId)
-        await agentConversationManager.addMessage(actualConversationId, "user", message);
-
-        // Get agent runtime
-        let runtime: any = null;
+        // Get agent runtime (factory handles all retry logic internally)
+        let runtime: AgentRuntime | null = null;
         let loadError: string | undefined;
+        
         try {
-          runtime = await agentFactory.getRuntime(agentId, true); // Clear cache on error
+          runtime = await agentFactory.getRuntime(agentId);
         } catch (err) {
           loadError = err instanceof Error ? err.message : String(err);
-          const errorStack = err instanceof Error ? err.stack : undefined;
-          console.error(`[AgentHandler] Error loading runtime for "${agentId}":`, loadError);
-          if (errorStack) {
-            console.error(`[AgentHandler] Stack trace:`, errorStack);
-          }
-          
-          // Try clearing cache and retrying once
-          try {
-            agentFactory.clearCache(agentId);
-            runtime = await agentFactory.getRuntime(agentId, false); // Don't retry again
-          } catch (retryErr) {
-            const retryError = retryErr instanceof Error ? retryErr.message : String(retryErr);
-            console.error(`[AgentHandler] Retry also failed for "${agentId}":`, retryError);
-            loadError = retryError; // Use retry error if it's more specific
-          }
         }
         
         if (!runtime) {
@@ -159,6 +119,37 @@ export function createAgentHandlers(
           });
           return;
         }
+        
+        // Get or create conversation using runtime methods
+        let conversation = runtime.getConversation?.(conversationId);
+        let actualConversationId = conversationId;
+        if (!conversation) {
+          const newConversation = runtime.createConversation?.(`conversation-${conversationId}`, "main", agentId);
+          if (newConversation) {
+            conversation = runtime.getConversation?.(newConversation.id);
+            actualConversationId = newConversation.id; // Use the actual created conversation ID
+          }
+        }
+
+        if (!conversation) {
+          respond(false, undefined, {
+            code: "CONVERSATION_ERROR",
+            message: "Failed to get or create conversation",
+          });
+          return;
+        }
+
+        // Resolve homedir directory for this agent
+        const homedir = resolveAgentHomedir(config, agentId);
+        const securityContext = await resolveSecurityContext(
+          config.security,
+          actualConversationId,
+          conversation.conversation.type,
+          agentId,
+          homedir,
+        );
+
+        // Note: Runtime now handles persisting user message internally
 
         // Create streaming callback to emit events
         const streamCallback = async (event: StreamEvent) => {
@@ -183,14 +174,12 @@ export function createAgentHandlers(
           conversationId: actualConversationId,
           message,
           thinkingLevel: thinkingLevel as any,
-          model,
           temperature,
           securityContext,
           stream: streamCallback,
         });
 
-        // Add assistant response to conversation (use actualConversationId)
-        await agentConversationManager.addMessage(actualConversationId, "assistant", result.response);
+        // Note: Runtime now handles persisting assistant response and all messages
 
         respond(true, {
           runId: result.runId,
@@ -232,7 +221,7 @@ export function createAgentHandlers(
         agentFactory.clearCache(agentId);
         
         const runtime = await agentFactory.getRuntime(agentId);
-        if (!runtime || !runtime.loadPrompts) {
+        if (!runtime?.loadPrompts) {
           respond(false, undefined, {
             code: "AGENT_NOT_FOUND",
             message: `Agent "${agentId}" not found or doesn't support prompt loading`,
@@ -240,16 +229,10 @@ export function createAgentHandlers(
           return;
         }
 
-        // Clear individual prompt loader cache if available
-        if (runtime.clearCache) {
-          runtime.clearCache();
-        }
-        
-        // Also clear prompt loader cache directly
-        if ((runtime as any).promptLoader?.clearCache) {
-          (runtime as any).promptLoader.clearCache((runtime as any).agentDir);
-        }
+        // Clear runtime cache if available (public API)
+        runtime.clearCache?.();
 
+        // Load prompts via public API
         const prompts = await runtime.loadPrompts();
         const promptsData = prompts as {
           files?: Map<string, string>;
@@ -328,9 +311,8 @@ export function createAgentHandlers(
         // Clear caches to ensure fresh load
         agentFactory.clearCache(agentId);
         const runtime = await agentFactory.getRuntime(agentId);
-        if ((runtime as any).promptLoader?.clearCache) {
-          (runtime as any).promptLoader.clearCache(agentDir);
-        }
+        // Clear runtime cache via public API if available
+        runtime?.clearCache?.();
 
         respond(true, {
           agentId,

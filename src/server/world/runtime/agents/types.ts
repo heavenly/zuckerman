@@ -1,4 +1,4 @@
-import type { ConversationId } from "@server/agents/zuckerman/conversations/types.js";
+import type { ConversationId, ConversationState, Conversation, ConversationKey, ConversationType, ConversationLabel } from "@server/agents/zuckerman/conversations/types.js";
 import type { SecurityContext } from "@server/world/execution/security/types.js";
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -32,6 +32,14 @@ export interface AgentRunParams {
   temperature?: number;
   securityContext: SecurityContext;
   stream?: StreamCallback;
+  /**
+   * Channel metadata for tool access (optional, set by world when routing from channels)
+   */
+  channelMetadata?: {
+    channel?: string;
+    to?: string;
+    accountId?: string;
+  };
 }
 
 export interface AgentRunResult {
@@ -43,6 +51,7 @@ export interface AgentRunResult {
 
 /**
  * Agent runtime interface - all agent runtimes must implement this
+ * Includes conversation management methods for world code to use
  */
 export interface AgentRuntime {
   /**
@@ -69,4 +78,42 @@ export interface AgentRuntime {
    * Clear caches (for hot reload)
    */
   clearCache?(): void;
+
+  /**
+   * Get conversation by ID (read-only)
+   */
+  getConversation?(conversationId: ConversationId): ConversationState | undefined;
+
+  /**
+   * List all conversations (read-only)
+   */
+  listConversations?(): Conversation[];
+
+  /**
+   * Create a new conversation (for routing/setup)
+   */
+  createConversation?(
+    label: string,
+    type?: "main" | "group" | "channel",
+    agentId?: string
+  ): Conversation;
+
+  /**
+   * Delete a conversation (for API operations)
+   */
+  deleteConversation?(conversationId: ConversationId): boolean;
+
+  /**
+   * Get or create main conversation (for routing)
+   */
+  getOrCreateMainConversation?(agentId?: string): Conversation;
+
+  /**
+   * Get or create conversation by key (for routing from world)
+   */
+  getOrCreateConversationByKey?(
+    conversationKey: ConversationKey,
+    type: ConversationType,
+    label?: ConversationLabel,
+  ): Conversation;
 }

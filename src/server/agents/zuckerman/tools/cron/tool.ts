@@ -5,7 +5,7 @@ import type { CalendarEvent, EventAction } from "./types.js";
 import { getEvents, setEvents, loadEvents, saveEvents } from "./storage.js";
 import { scheduleEvents, scheduleEvent, stopCronInstance } from "./scheduler.js";
 import { executeEvent } from "./executor.js";
-import { activityRecorder } from "@server/world/activity/index.js";
+import { activityRecorder } from "@server/agents/zuckerman/activity/index.js";
 
 // Initialize events on module load
 const loadedEvents = loadEvents();

@@ -1,6 +1,6 @@
 import type { GatewayRequestHandlers } from "../types.js";
-import { queryActivities, getActivityCount, getAvailableDateRange } from "@server/world/activity/index.js";
-import type { ActivityQuery } from "@server/world/activity/types.js";
+import { queryActivities, getActivityCount, getAvailableDateRange } from "@server/agents/zuckerman/activity/index.js";
+import type { ActivityQuery } from "@server/agents/zuckerman/activity/types.js";
 
 export function createActivityHandlers(): Partial<GatewayRequestHandlers> {
   return {

@@ -1,5 +1,5 @@
 import type { ToolExecutionContext } from "./terminal/index.js";
-import { activityRecorder } from "@server/world/activity/index.js";
+import { activityRecorder } from "@server/agents/zuckerman/activity/index.js";
 import type { RunContext } from "../core/awareness/context.js";
 
 export type ToolCall = {

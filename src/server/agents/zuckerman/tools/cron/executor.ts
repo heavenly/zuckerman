@@ -5,7 +5,7 @@ import { loadConfig } from "@server/world/config/index.js";
 import { resolveSecurityContext } from "@server/world/execution/security/context/index.js";
 import { deriveConversationKey } from "@server/agents/zuckerman/conversations/index.js";
 import { loadConversationStore, resolveConversationStorePath } from "@server/agents/zuckerman/conversations/store.js";
-import { activityRecorder } from "@server/world/activity/index.js";
+import { activityRecorder } from "@server/agents/zuckerman/activity/index.js";
 import { saveEvents } from "./storage.js";
 import { scheduleEvent, calculateNextOccurrence } from "./scheduler.js";
 
@@ -70,7 +70,7 @@ async function executeAgentTurn(event: CalendarEvent, eventsMap: Map<string, Cal
   const agentFactory = context.agentFactory;
   const channelRegistry = context.channelRegistry;
 
-  // Get runtime
+  // Get runtime (exposes conversation management methods)
   let runtime;
   try {
     runtime = await agentFactory.getRuntime(agentId);
@@ -83,37 +83,37 @@ async function executeAgentTurn(event: CalendarEvent, eventsMap: Map<string, Cal
     return;
   }
 
-  // Get conversation manager
-  const conversationManager = agentFactory.getConversationManager(agentId);
-
-  // Create or get conversation
+  // Create or get conversation using runtime methods
   let conversationId: string;
   let isNewConversation = false;
   
   const conversationTarget = action.conversationTarget || "isolated";
   if (conversationTarget === "isolated") {
     // Create temporary isolated conversation
-    const conversation = conversationManager.createConversation(`cron-${event.id}`, "main", agentId);
+    const conversation = runtime.createConversation?.(`cron-${event.id}`, "main", agentId);
+    if (!conversation) {
+      console.error(`[Calendar] Failed to create conversation for event ${event.id}`);
+      return;
+    }
     conversationId = conversation.id;
     isNewConversation = true;
   } else {
-    // Use main conversation - get or create
-    const conversationKey = deriveConversationKey(agentId, "main");
-    const storePath = resolveConversationStorePath(agentId);
-    const store = loadConversationStore(storePath);
-    const conversationEntry = store[conversationKey];
-    
-    if (conversationEntry) {
-      conversationId = conversationEntry.conversationId;
-    } else {
-      const conversation = conversationManager.createConversation("main", "main", agentId);
-      conversationId = conversation.id;
-      isNewConversation = true;
+    // Use main conversation - get or create using runtime
+    if (!runtime.getOrCreateMainConversation) {
+      console.error(`[Calendar] Runtime for "${agentId}" does not support conversation management`);
+      return;
     }
+    const conversation = runtime.getOrCreateMainConversation(agentId);
+    conversationId = conversation.id;
+    isNewConversation = false; // Main conversation already exists or was just created
   }
 
-  // Get conversation state
-  const conversation = conversationManager.getConversation(conversationId);
+  // Get conversation state using runtime
+  if (!runtime.getConversation) {
+    console.error(`[Calendar] Runtime for "${agentId}" does not support conversation management`);
+    return;
+  }
+  const conversation = runtime.getConversation(conversationId);
   if (!conversation) {
     console.error(`[Calendar] Failed to get conversation ${conversationId}`);
     return;
@@ -129,30 +129,6 @@ async function executeAgentTurn(event: CalendarEvent, eventsMap: Map<string, Cal
     console.warn("Failed to record calendar event triggered:", err);
   });
 
-  // Set channel metadata from context if provided
-  if (action.context) {
-    const contextMetadata: {
-      channel?: string;
-      to?: string;
-      accountId?: string;
-    } = {};
-    
-    if (action.context.channel) {
-      contextMetadata.channel = action.context.channel;
-    }
-    if (action.context.to) {
-      contextMetadata.to = action.context.to;
-    }
-    if (action.context.accountId) {
-      contextMetadata.accountId = action.context.accountId;
-    }
-    
-    if (Object.keys(contextMetadata).length > 0) {
-      await conversationManager.updateChannelMetadata(conversationId, contextMetadata);
-      console.log(`[Calendar] Set channel metadata for event ${event.id}:`, contextMetadata);
-    }
-  }
-
   // Load config and resolve security context
   const config = await loadConfig();
   const homedir = resolveAgentHomedir(config, agentId);
@@ -163,6 +139,21 @@ async function executeAgentTurn(event: CalendarEvent, eventsMap: Map<string, Cal
     agentId,
     homedir,
   );
+
+  // Build channel metadata from context if provided (runtime handles updating it)
+  const channelMetadata: {
+    channel?: string;
+    to?: string;
+    accountId?: string;
+  } | undefined = action.context ? {
+    channel: action.context.channel,
+    to: action.context.to,
+    accountId: action.context.accountId,
+  } : undefined;
+
+  if (channelMetadata && Object.keys(channelMetadata).some(k => channelMetadata[k as keyof typeof channelMetadata] !== undefined)) {
+    console.log(`[Calendar] Setting channel metadata for event ${event.id}:`, channelMetadata);
+  }
 
   // Run agent
   console.log(`[Calendar] Running agent turn for event ${event.id} in conversation ${conversationId}`);
@@ -183,10 +174,11 @@ async function executeAgentTurn(event: CalendarEvent, eventsMap: Map<string, Cal
     ? `${action.contextMessage}\n\n${executionInstruction}`
     : executionInstruction;
   
-  const runParams: any = {
+  const runParams = {
     conversationId,
     message,
     securityContext,
+    channelMetadata,
   };
   
   let result;
@@ -220,16 +212,15 @@ async function executeAgentTurn(event: CalendarEvent, eventsMap: Map<string, Cal
   
   // Note: toolsUsed is not currently returned by runtime, but tools are executed during the run
   // Check conversation messages to see if tools were called
-  const conversationAfter = conversationManager.getConversation(conversationId);
-  const toolMessages = conversationAfter?.messages.filter(m => m.role === "tool") || [];
+  const conversationAfter = runtime.getConversation?.(conversationId);
+  const toolMessages = conversationAfter?.messages.filter((m: { role: string }) => m.role === "tool") || [];
   if (toolMessages.length > 0) {
     console.log(`[Calendar] Agent executed ${toolMessages.length} tool call(s) for event ${event.id}`);
   } else {
     console.log(`[Calendar] Agent did not execute any tools for event ${event.id} - response was: "${responsePreview}"`);
   }
 
-  // Add response to conversation
-  conversationManager.addMessage(conversationId, "assistant", result.response);
+  // Note: Runtime now handles persisting assistant response and all messages
 
   // Note: Agent uses its tools (like telegram) to send messages
   // Channel metadata is already set on the conversation, so tools can access it

@@ -6,14 +6,13 @@ import { SignalChannel } from "./signal.js";
 import { SlackChannel } from "./slack.js";
 import type { ZuckermanConfig } from "@server/world/config/types.js";
 import type { SimpleRouter } from "@server/world/communication/routing/index.js";
-import type { ConversationManager } from "@server/agents/zuckerman/conversations/index.js";
 import type { AgentRuntimeFactory } from "@server/world/runtime/agents/index.js";
 import type { Channel } from "./types.js";
 import { setChannelRegistry } from "@server/agents/zuckerman/tools/channels/registry.js";
 import { formatMessageWithChannelSource } from "./envelope.js";
 import { loadConfig } from "@server/world/config/index.js";
 import { resolveSecurityContext } from "@server/world/execution/security/context/index.js";
-import { activityRecorder } from "@server/world/activity/index.js";
+import { activityRecorder } from "@server/agents/zuckerman/activity/index.js";
 
 /**
  * Initialize and register all configured channels
@@ -21,7 +20,6 @@ import { activityRecorder } from "@server/world/activity/index.js";
 export async function initializeChannels(
   config: ZuckermanConfig,
   router: SimpleRouter,
-  conversationManager: ConversationManager,
   agentFactory: AgentRuntimeFactory,
   broadcastEvent?: (event: { type: "event"; event: string; payload?: unknown }) => void,
 ): Promise<ChannelRegistry> {
@@ -58,34 +56,26 @@ export async function initializeChannels(
           return;
         }
 
-        // Get conversation manager for this agent
-        const cm = agentFactory.getConversationManager(route.agentId);
-        
-        // Get or create conversation
-        let conversation = cm.getConversation(route.conversationId);
-        if (!conversation) {
-          const newConversation = cm.createConversation(
-            route.conversationKey,
-            message.metadata?.isGroup ? "group" : "main",
-            route.agentId,
-          );
-          conversation = cm.getConversation(newConversation.id)!;
+        // Get or create conversation using runtime router
+        if (!runtime.getOrCreateConversationByKey) {
+          console.error(`[Channels] Runtime for "${route.agentId}" does not support conversation routing`);
+          return;
         }
 
-        // Store channel metadata for tool access
-        await cm.updateChannelMetadata(route.conversationId, {
-          channel: "whatsapp",
-          to: message.from,
-          accountId: "default",
-        });
+        const conversationType = message.metadata?.isGroup ? "group" : "main";
+        const conversationObj = runtime.getOrCreateConversationByKey(route.conversationKey, conversationType);
+        
+        // Get conversation state for type checking
+        const conversation = runtime.getConversation?.(conversationObj.id);
+        if (!conversation) {
+          console.error(`[Channels] Failed to get conversation state for "${route.agentId}"`);
+          return;
+        }
 
         // Format message with channel source prefix
         const formattedMessage = formatMessageWithChannelSource(message);
-        
-        // Add message to conversation (store original content, but send formatted to agent)
-        cm.addMessage(route.conversationId, "user", message.content);
 
-        // Run agent
+        // Run agent (runtime handles message persistence and channel metadata internally)
         const config = await loadConfig();
         const securityContext = await resolveSecurityContext(
           config.security,
@@ -99,10 +89,14 @@ export async function initializeChannels(
           conversationId: route.conversationId,
           message: formattedMessage,
           securityContext,
+          channelMetadata: {
+            channel: "whatsapp",
+            to: message.from,
+            accountId: "default",
+          },
         });
 
-        // Add assistant response (reuse cm from above)
-        cm.addMessage(route.conversationId, "assistant", result.response);
+        // Note: Runtime now handles persisting assistant response and all messages
 
         // Send reply back through channel
         await whatsappChannel.send(result.response, message.from);
@@ -138,13 +132,14 @@ export async function initializeChannels(
             accountId: "default",
           });
 
-          // Get conversation manager for this agent
-          const cm = agentFactory.getConversationManager(route.agentId);
-          
-          // Delete existing conversation if it exists
-          const existingConversation = cm.getConversation(route.conversationId);
-          if (existingConversation) {
-            cm.deleteConversation(route.conversationId);
+          // Get agent runtime
+          const runtime = await agentFactory.getRuntime(route.agentId);
+          if (runtime?.getConversation && runtime?.deleteConversation) {
+            // Delete existing conversation if it exists
+            const existingConversation = runtime.getConversation(route.conversationId);
+            if (existingConversation) {
+              runtime.deleteConversation(route.conversationId);
+            }
           }
 
           // Send confirmation message
@@ -164,32 +159,24 @@ export async function initializeChannels(
           return;
         }
 
-        // Get conversation manager for this agent
-        const cm = agentFactory.getConversationManager(route.agentId);
-        
-        // Get or create conversation
-        let conversation = cm.getConversation(route.conversationId);
-        if (!conversation) {
-          const newConversation = cm.createConversation(
-            route.conversationKey,
-            message.metadata?.isGroup ? "group" : "main",
-            route.agentId,
-          );
-          conversation = cm.getConversation(newConversation.id)!;
+        // Get or create conversation using runtime router
+        if (!runtime.getOrCreateConversationByKey) {
+          console.error(`[Channels] Runtime for "${route.agentId}" does not support conversation routing`);
+          return;
         }
 
-        // Store channel metadata for tool access
-        await cm.updateChannelMetadata(route.conversationId, {
-          channel: channelId,
-          to: message.from,
-          accountId: "default",
-        });
+        const conversationType = message.metadata?.isGroup ? "group" : "main";
+        const conversationObj = runtime.getOrCreateConversationByKey(route.conversationKey, conversationType);
+        
+        // Get conversation state for type checking
+        const conversation = runtime.getConversation?.(conversationObj.id);
+        if (!conversation) {
+          console.error(`[Channels] Failed to get conversation state for "${route.agentId}"`);
+          return;
+        }
 
         // Format message with channel source prefix
         const formattedMessage = formatMessageWithChannelSource(message);
-        
-        // Add message to conversation (store original content, but send formatted to agent)
-        cm.addMessage(route.conversationId, "user", message.content);
 
         // Record incoming channel message
         await activityRecorder.recordChannelMessageIncoming(
@@ -200,7 +187,7 @@ export async function initializeChannels(
           message.content,
         );
 
-        // Run agent
+        // Run agent (runtime handles message persistence and channel metadata internally)
         const config = await loadConfig();
         const securityContext = await resolveSecurityContext(
           config.security,
@@ -214,10 +201,14 @@ export async function initializeChannels(
           conversationId: route.conversationId,
           message: formattedMessage,
           securityContext,
+          channelMetadata: {
+            channel: channelId,
+            to: message.from,
+            accountId: "default",
+          },
         });
 
-        // Add assistant response (reuse cm from above)
-        cm.addMessage(route.conversationId, "assistant", result.response);
+        // Note: Runtime now handles persisting assistant response and all messages
 
         // Send reply back through channel
         await channel.send(result.response, message.from);
