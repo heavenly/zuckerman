@@ -16,6 +16,7 @@ import type { RunContext } from "./context.js";
 import { formatMemoriesForPrompt } from "../memory/prompt-formatter.js";
 import { ToolService } from "../../tools/index.js";
 import { StreamEventEmitter } from "@server/world/communication/stream-emitter.js";
+import { ValidationService } from "../planning/validation-service.js";
 
 export class Awareness implements AgentRuntime {
   readonly agentId = "zuckerman";
@@ -186,6 +187,7 @@ export class Awareness implements AgentRuntime {
 
     try {
       const toolService = new ToolService();
+      const validationService = new ValidationService(context.llmModel);
 
       // Unified loop: handles initial call and recursive tool calls
       while (true) {
@@ -196,7 +198,7 @@ export class Awareness implements AgentRuntime {
           availableTools: context.availableTools,
         });
 
-        // If no tool calls, we're done
+        // If no tool calls, we're about to end - validate first
         if (!result.toolCalls || result.toolCalls.length === 0) {
           // Add final assistant response to context messages
           context.messages.push({
@@ -204,6 +206,36 @@ export class Awareness implements AgentRuntime {
             content: result.content,
           });
 
+          // VALIDATE before ending
+          try {
+            const validation = await validationService.validate({
+              userRequest: context.message,
+              systemResult: result.content,
+            });
+
+            console.log(`[Awareness] Validation:`, validation);
+
+            // If NOT satisfied, add feedback and continue loop
+            if (!validation.satisfied) {
+              const missingText = validation.missing.length > 0
+                ? ` Missing: ${validation.missing.join(', ')}.`
+                : '';
+              const feedback = `Validation: ${validation.reason}.${missingText} Please try again to fully satisfy the user's request.`;
+
+              context.messages.push({
+                role: "system",
+                content: feedback,
+              });
+
+              // Continue loop - LLM will see feedback and try again
+              continue;
+            }
+          } catch (error) {
+            // If validation fails, log and proceed (don't block)
+            console.warn(`[Awareness] Validation failed:`, error);
+          }
+
+          // If satisfied (or validation failed), proceed with normal end
           // Persist final response to conversation
           if (context.conversation) {
             await this.conversationManager.addMessage(
