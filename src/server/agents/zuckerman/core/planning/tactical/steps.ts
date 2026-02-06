@@ -75,14 +75,16 @@ Return JSON:
   "stepsRequired": true/false,
   "steps": [
     {
-      "title": "step title",
-      "description": "what this step does",
+      "title": "Clear, descriptive action title (e.g., 'Create project directory', 'Install dependencies', NOT 'Step 1' or generic names)",
+      "description": "Detailed explanation of what this step does",
       "order": 0,
       "requiresConfirmation": true/false,
       "confirmationReason": "why confirmation is needed (if requiresConfirmation is true)"
     }
   ]
 }
+
+IMPORTANT: Each step title must be a clear, actionable description of what will be done. Do NOT use generic titles like "Step 1", "Step 2", or numbered steps. Use descriptive action verbs.
 
 If stepsRequired is false, return an empty steps array.
 
@@ -130,15 +132,19 @@ Return ONLY valid JSON, no other text.`;
       }
 
       // Convert to TaskStep format
-      const steps: TaskStep[] = stepsArray.map((step: any, index: number) => ({
-        id: `step-${Date.now()}-${index}`,
-        title: step.title || `Step ${index + 1}`,
-        description: step.description,
-        order: step.order ?? index,
-        completed: false,
-        requiresConfirmation: Boolean(step.requiresConfirmation),
-        confirmationReason: step.confirmationReason,
-      }));
+      const steps: TaskStep[] = stepsArray.map((step: any, index: number) => {
+        // Use title if provided, otherwise use description, otherwise use a descriptive fallback
+        const title = step.title || step.description || `Complete task step ${index + 1}`;
+        return {
+          id: `step-${Date.now()}-${index}`,
+          title: title,
+          description: step.description,
+          order: step.order ?? index,
+          completed: false,
+          requiresConfirmation: Boolean(step.requiresConfirmation),
+          confirmationReason: step.confirmationReason,
+        };
+      });
 
       return steps.length > 0 ? steps : this.createFallbackStep(message);
     } catch (error) {

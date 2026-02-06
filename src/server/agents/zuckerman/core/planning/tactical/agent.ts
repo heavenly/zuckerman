@@ -27,7 +27,9 @@ export class TacticalAgent {
 
     const systemPrompt = `You are responsible for tactical planning. Your role is to break down tasks into actionable steps.
 
-Given a task, decide what steps are needed to complete it. Return your decision as JSON.`;
+Given a task, decide what steps are needed to complete it. Return your decision as JSON.
+
+IMPORTANT: Each step must have a clear, descriptive title that explains what action will be performed. Do NOT use generic titles like "Step 1", "Step 2", or numbered steps. Use action verbs and be specific (e.g., "Create project directory", "Install npm dependencies", "Write configuration file").`;
 
     const context = focus
       ? `Current focus: ${focus.currentTopic}${focus.currentTask ? ` (task: ${focus.currentTask})` : ""}\nUrgency: ${urgency}\n\nTask: ${message}`
@@ -64,15 +66,19 @@ Given a task, decide what steps are needed to complete it. Return your decision 
         return this.createFallbackStep(message);
       }
 
-      const steps: TaskStep[] = stepsArray.map((step: any, index: number) => ({
-        id: `step-${Date.now()}-${index}`,
-        title: step.title || `Step ${index + 1}`,
-        description: step.description,
-        order: step.order ?? index,
-        completed: false,
-        requiresConfirmation: Boolean(step.requiresConfirmation),
-        confirmationReason: step.confirmationReason,
-      }));
+      const steps: TaskStep[] = stepsArray.map((step: any, index: number) => {
+        // Use title if provided, otherwise use description, otherwise use a descriptive fallback
+        const title = step.title || step.description || `Complete task step ${index + 1}`;
+        return {
+          id: `step-${Date.now()}-${index}`,
+          title: title,
+          description: step.description,
+          order: step.order ?? index,
+          completed: false,
+          requiresConfirmation: Boolean(step.requiresConfirmation),
+          confirmationReason: step.confirmationReason,
+        };
+      });
 
       return steps.length > 0 ? steps : this.createFallbackStep(message);
     } catch (error) {

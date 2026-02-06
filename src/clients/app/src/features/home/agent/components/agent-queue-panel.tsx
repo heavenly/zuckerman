@@ -35,11 +35,13 @@ const STATUS_ICONS: Record<Task["status"], React.ReactNode> = {
   completed: <CheckCircle2 className="h-3 w-3" />,
   cancelled: <XCircle className="h-3 w-3" />,
   failed: <XCircle className="h-3 w-3" />,
+  paused: <PauseCircle className="h-3 w-3" />,
 };
 
 function TaskItem({ task }: { task: Task }) {
-  const urgencyColor = URGENCY_COLORS[task.urgency];
-  const statusIcon = STATUS_ICONS[task.status];
+  const urgencyColor = task.urgency ? URGENCY_COLORS[task.urgency] : "bg-gray-500/10 text-gray-500 border-gray-500/20";
+  const statusIcon = STATUS_ICONS[task.status] || <Circle className="h-3 w-3" />;
+  const isGoal = task.type === "goal";
 
   return (
     <div className="p-3 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors">
@@ -48,11 +50,23 @@ function TaskItem({ task }: { task: Task }) {
           <div className={`flex-shrink-0 ${task.status === "active" ? "text-primary" : "text-muted-foreground"}`}>
             {statusIcon}
           </div>
-          <h4 className="text-sm font-medium text-foreground truncate">{task.title}</h4>
+          <div className="flex-1 min-w-0">
+            <h4 className="text-sm font-medium text-foreground truncate">{task.title}</h4>
+            {isGoal && (
+              <span className="text-xs text-muted-foreground">Goal</span>
+            )}
+          </div>
         </div>
-        <Badge variant="outline" className={`text-xs ${urgencyColor} border`}>
-          {task.urgency}
-        </Badge>
+        {task.urgency && (
+          <Badge variant="outline" className={`text-xs ${urgencyColor} border`}>
+            {task.urgency}
+          </Badge>
+        )}
+        {isGoal && task.children && task.children.length > 0 && (
+          <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-500 border-blue-500/20">
+            {task.children.length} tasks
+          </Badge>
+        )}
       </div>
       
       {task.description && (
@@ -127,7 +141,32 @@ export function AgentQueuePanel({ queueState, loading, error, onRefresh }: Agent
     );
   }
 
-  const { queue, currentTask, stats } = queueState;
+  // Extract queue from transformed state (backward compatibility)
+  const queue = queueState.queue || {
+    pending: [],
+    active: null,
+    completed: [],
+    strategic: [],
+  };
+  const currentTask = queueState.currentTask || queueState.currentNode 
+    ? (queueState.currentTask || (queueState.currentNode && queueState.currentNode.type === "task" 
+      ? {
+          id: queueState.currentNode.id,
+          title: queueState.currentNode.title,
+          description: queueState.currentNode.description,
+          type: queueState.currentNode.type,
+          source: queueState.currentNode.source,
+          priority: queueState.currentNode.priority,
+          urgency: queueState.currentNode.urgency,
+          status: (queueState.currentNode.taskStatus || "pending") as Task["status"],
+          createdAt: queueState.currentNode.createdAt,
+          updatedAt: queueState.currentNode.updatedAt,
+          progress: queueState.currentNode.progress,
+          error: queueState.currentNode.error,
+        }
+      : null))
+    : null;
+  const stats = queueState.stats;
 
   return (
     <div className="h-full w-full flex flex-col bg-background overflow-hidden" style={{ width: '100%', maxWidth: '100%' }}>

@@ -269,11 +269,13 @@ export class StrategicManager {
     urgency: UrgencyLevel,
     focus: FocusState | null
   ): Promise<number> {
-    const tree = this.treeManager.getTree();
+    // Use internal tree structure directly instead of getTree() which serializes
+    // Get all nodes from the tree manager's internal Map
+    const allNodes = this.treeManager.getAllNodes();
     let redecomposedCount = 0;
 
     // Check all active goals
-    for (const node of tree.nodes.values()) {
+    for (const node of allNodes) {
       if (node.type === "goal" && node.goalStatus === "active") {
         if (await this.agent.shouldDecompose(node)) {
           const decomposition = await this.agent.decomposeGoal(node, urgency, focus);

@@ -347,9 +347,9 @@ export class ZuckermanAwareness implements AgentRuntime {
             conversationId // conversationId for memory integration
           );
 
-          // Process queue to start task execution (async - uses LLM for continuity assessment)
+          // Process tree to start task execution (async - uses LLM for continuity assessment)
           // Pass original user message so confirmation uses exact wording
-          const queueResult = await this.planningManager.processQueue(conversationId, message);
+          const queueResult = await this.planningManager.processTree(conversationId, message);
         
         // Handle pending interruption
         if (queueResult.type === "pending_interruption") {
@@ -918,6 +918,8 @@ export class ZuckermanAwareness implements AgentRuntime {
                   step: {
                     id: currentStep.id,
                     title: currentStep.title,
+                    description: currentStep.description,
+                    order: currentStep.order,
                     completed: true,
                   },
                   progress,

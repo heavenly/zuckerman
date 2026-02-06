@@ -119,7 +119,7 @@ export function StepProgress({
                         : "text-foreground"
                     }`}
                   >
-                    {step.title}
+                    {step.title || step.description || `Step ${step.order + 1}`}
                   </span>
                   {step.requiresConfirmation && (
                     <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-600 dark:text-yellow-400">

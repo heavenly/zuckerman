@@ -388,7 +388,7 @@ export function useChat(
               
               const planningMessage: Message = {
                 role: "assistant",
-                content: "📋 Planning task execution...",
+                content: "Planning task execution...",
                 timestamp: Date.now(),
                 steps: payload.steps.map(s => ({
                   id: s.id,
@@ -437,7 +437,7 @@ export function useChat(
             if (streamingIndex !== -1) {
               newMessages[streamingIndex] = {
                 ...newMessages[streamingIndex],
-                content: `${newMessages[streamingIndex].content}\n\n❌ Error: ${payload.error || "Unknown error"}`,
+                content: `${newMessages[streamingIndex].content}\n\nError: ${payload.error || "Unknown error"}`,
               };
             }
             return newMessages;
@@ -459,15 +459,20 @@ export function useChat(
                 if (payload.step) {
                   const stepIndex = updatedSteps.findIndex(s => s.id === payload.step!.id);
                   if (stepIndex !== -1) {
+                    // Preserve existing title if new step doesn't have one
                     updatedSteps[stepIndex] = {
                       ...updatedSteps[stepIndex],
                       ...payload.step,
+                      // Preserve title if payload doesn't include it
+                      title: payload.step.title || updatedSteps[stepIndex].title,
+                      // Preserve description if payload doesn't include it
+                      description: payload.step.description !== undefined ? payload.step.description : updatedSteps[stepIndex].description,
                     };
                   } else {
                     // Add new step if not found
                     updatedSteps.push({
                       id: payload.step.id,
-                      title: payload.step.title,
+                      title: payload.step.title || `Step ${payload.step.order !== undefined ? payload.step.order + 1 : updatedSteps.length + 1}`,
                       description: payload.step.description,
                       order: payload.step.order ?? updatedSteps.length,
                       completed: payload.step.completed ?? false,

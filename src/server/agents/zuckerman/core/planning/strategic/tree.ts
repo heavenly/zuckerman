@@ -243,12 +243,25 @@ export class TreeManager {
   }
 
   /**
+   * Get all nodes as an array (for internal use)
+   */
+  getAllNodes(): GoalTaskNode[] {
+    return Array.from(this.tree.nodes.values());
+  }
+
+  /**
    * Get tree structure
    */
   getTree(): GoalTaskTree {
+    // Serialize Map to object for JSON compatibility
+    const nodesObj: Record<string, GoalTaskNode> = {};
+    for (const [id, node] of this.tree.nodes.entries()) {
+      nodesObj[id] = { ...node };
+    }
+    
     return {
       root: this.tree.root ? { ...this.tree.root } : null,
-      nodes: new Map(this.tree.nodes),
+      nodes: nodesObj as any, // Cast to any to maintain type compatibility
       executionPath: [...this.tree.executionPath],
       activeNodeId: this.tree.activeNodeId,
     };
