@@ -9,7 +9,7 @@ export interface CriticismResult {
 export class CriticismService {
   constructor(private judgeModel: LLMModel) {}
 
-  async validate(params: {
+  async run(params: {
     userRequest: string;
     systemResult: string;
   }): Promise<CriticismResult> {

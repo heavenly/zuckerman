@@ -5,41 +5,35 @@ import { loadConfig } from "@server/world/config/index.js";
 import { ConversationManager } from "@server/agents/zuckerman/conversations/index.js";
 import { ToolRegistry } from "@server/agents/zuckerman/tools/registry.js";
 import { LLMManager } from "@server/world/providers/llm/index.js";
-import { IdentityLoader, type LoadedPrompts } from "../identity/identity-loader.js";
+import { IdentityLoader } from "../identity/identity-loader.js";
 import { agentDiscovery } from "@server/agents/discovery.js";
 import { resolveAgentHomedir } from "@server/world/homedir/resolver.js";
 import { UnifiedMemoryManager } from "@server/agents/zuckerman/core/memory/manager.js";
-import { activityRecorder } from "@server/agents/zuckerman/activity/index.js";
+import type { MemoryType } from "@server/agents/zuckerman/core/memory/types.js";
 import { resolveMemorySearchConfig } from "@server/agents/zuckerman/core/memory/config.js";
 import { LLMService } from "@server/world/providers/llm/llm-service.js";
 import type { RunContext } from "@server/world/providers/llm/context.js";
 import { formatMemoriesForPrompt } from "../memory/prompt-formatter.js";
 import { ToolService } from "../../tools/index.js";
 import { StreamEventEmitter } from "@server/world/communication/stream-emitter.js";
-import { CriticismService } from "../criticism/criticism-service.js";
+import { CriticismService } from "../system2/criticism/criticism-service.js";
 
 export class Self {
   readonly agentId: string;
-  
   private identityLoader: IdentityLoader;
   private memoryManager!: UnifiedMemoryManager;
-
   private llmManager: LLMManager;
   private conversationManager: ConversationManager;
   private toolRegistry: ToolRegistry;
-
-  
-  // Load prompts from agent's core directory (where markdown files are)
   private readonly agentDir: string;
 
   constructor(agentId: string, conversationManager?: ConversationManager, llmManager?: LLMManager, identityLoader?: IdentityLoader) {
     this.agentId = agentId;
     this.conversationManager = conversationManager || new ConversationManager(this.agentId);
-    // Initialize tool registry without conversationId - will be set per-run
     this.toolRegistry = new ToolRegistry();
     this.llmManager = llmManager || LLMManager.getInstance();
     this.identityLoader = identityLoader || new IdentityLoader();
-    
+
     // Get agent directory from discovery service
     const metadata = agentDiscovery.getMetadata(this.agentId);
     if (!metadata) {
@@ -56,7 +50,7 @@ export class Self {
       const config = await loadConfig();
       const homedir = resolveAgentHomedir(config, this.agentId);
       this.memoryManager = UnifiedMemoryManager.create(homedir, this.agentId);
-      
+
       // Initialize database for vector search if memory search is enabled
       const memorySearchConfig = config.agent?.memorySearch;
       if (memorySearchConfig) {
@@ -66,8 +60,7 @@ export class Self {
         }
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[ZuckermanRuntime] Initialization failed:`, message);
+      console.warn(`[ZuckermanRuntime] Initialization failed:`, error instanceof Error ? error.message : String(error));
       // Continue without database - memory search will be disabled
     }
   }
@@ -109,7 +102,7 @@ export class Self {
       memoryManager: this.memoryManager,
       toolRegistry: this.toolRegistry,
       llmModel,
-      streamEmitter: new StreamEventEmitter(stream),
+      streamEmitter: new StreamEventEmitter(stream, this.agentId, conversationId),
       availableTools,
       systemPrompt,
       relevantMemoriesText: "",
@@ -118,25 +111,17 @@ export class Self {
     return context;
   }
 
-
   async run(params: AgentRunParams): Promise<AgentRunResult> {
     const context = await this.buildRunContext(params);
     const llmService = new LLMService(context.llmModel, context.streamEmitter, context.runId);
 
-    // Get conversation once - reuse throughout the run
-    let conversation = this.conversationManager.getConversation(context.conversationId);
-
     // Handle channel metadata
-    if (params.channelMetadata && conversation) {
+    if (params.channelMetadata) {
       await this.conversationManager.updateChannelMetadata(context.conversationId, params.channelMetadata);
     }
 
     // Persist user message
-    if (conversation) {
-      await this.conversationManager.addMessage(context.conversationId, "user", context.message, { runId: context.runId });
-      // Refresh conversation to get updated messages
-      conversation = this.conversationManager.getConversation(context.conversationId);
-    }
+    await this.conversationManager.addMessage(context.conversationId, "user", context.message, { runId: context.runId });
 
     // Get relevant memories
     try {
@@ -150,19 +135,18 @@ export class Self {
     }
 
     // Remember memories (async)
-    const conversationContext = conversation?.messages.slice(-3).map(m => m.content).join("\n");
+    const conversationContext = this.conversationManager.getConversation(context.conversationId)?.messages.slice(-3).map(m => m.content).join("\n");
     context.memoryManager.onNewMessage(context.message, context.conversationId, conversationContext)
       .catch(err => console.warn(`[self] Failed to remember memories:`, err));
 
-    await activityRecorder.recordAgentRunStart(context.agentId, context.conversationId, context.runId, context.message);
-    await context.streamEmitter.emitLifecycleStart(context.runId);
+    await context.streamEmitter.emitLifecycleStart(context.runId, context.message);
 
     try {
       const toolService = new ToolService();
       const criticismService = new CriticismService(context.llmModel);
 
       while (true) {
-        // Call LLM (buildMessages reads from conversation, pruning happens automatically in addMessage)
+        const conversation = this.conversationManager.getConversation(context.conversationId);
         const result = await llmService.call({
           messages: llmService.buildMessages(context, conversation),
           temperature: context.temperature,
@@ -170,86 +154,45 @@ export class Self {
         });
 
         // Handle final response (no tool calls)
-        if (!result.toolCalls || result.toolCalls.length === 0) {
-          
+        if (!result.toolCalls?.length) {
           try {
-            const validation = await criticismService.validate({
+            const validation = await criticismService.run({
               userRequest: context.message,
               systemResult: result.content,
             });
 
             if (!validation.satisfied) {
-              const missing = validation.missing.length > 0 ? ` Missing: ${validation.missing.join(', ')}.` : '';
-              if (conversation) {
-                await this.conversationManager.addMessage(context.conversationId, "system", 
-                  `Validation: ${validation.reason}.${missing} Instructions: Try different approach to complete the task.`,
-                  { runId: context.runId });
-                conversation = this.conversationManager.getConversation(context.conversationId);
-              }
+              const missing = validation.missing.length ? ` Missing: ${validation.missing.join(', ')}.` : '';
+              await this.conversationManager.addMessage(context.conversationId, "system", `Validation: ${validation.reason}.${missing} Instructions: Try different approach to complete the task.`, { runId: context.runId });
               continue;
             }
           } catch (error) {
             console.warn(`[self] Validation error:`, error);
           }
 
-          if (conversation) {
-            await this.conversationManager.addMessage(context.conversationId, "assistant", result.content, { runId: context.runId });
-          }
+          await this.conversationManager.addMessage(context.conversationId, "assistant", result.content, { runId: context.runId });
 
-          await context.streamEmitter.emitLifecycleEnd(context.runId, result.tokensUsed?.total);
-          await activityRecorder.recordAgentRunComplete(
-            context.agentId,
-            context.conversationId,
-            context.runId,
-            result.content,
-            result.tokensUsed?.total,
-            undefined,
-          );
-
-          return {
-            runId: context.runId,
-            response: result.content,
-            tokensUsed: result.tokensUsed?.total,
-          };
+          const response = { runId: context.runId, response: result.content, tokensUsed: result.tokensUsed?.total };
+          await context.streamEmitter.emitLifecycleEnd(context.runId, result.tokensUsed?.total, result.content);
+          return response;
         }
 
         // Handle tool calls
-        const assistantMessage = {
-          role: "assistant" as const,
-          content: "",
-          toolCalls: result.toolCalls.map(tc => ({
-            id: tc.id,
-            name: tc.name,
-            arguments: typeof tc.arguments === "string" ? tc.arguments : JSON.stringify(tc.arguments),
-          })),
-        };
-        if (conversation) {
-          await this.conversationManager.addMessage(context.conversationId, "assistant", "", {
-            toolCalls: assistantMessage.toolCalls,
-            runId: context.runId,
-          });
-          conversation = this.conversationManager.getConversation(context.conversationId);
-        }
+        const toolCalls = result.toolCalls.map(tc => ({
+          id: tc.id,
+          name: tc.name,
+          arguments: typeof tc.arguments === "string" ? tc.arguments : JSON.stringify(tc.arguments),
+        }));
+        await this.conversationManager.addMessage(context.conversationId, "assistant", "", { toolCalls, runId: context.runId });
 
         const toolResults = await toolService.executeTools(context, result.toolCalls);
         for (const toolResult of toolResults) {
-          if (conversation) {
-            await this.conversationManager.addMessage(context.conversationId, "tool", toolResult.content, {
-              toolCallId: toolResult.toolCallId,
-              runId: context.runId,
-            });
-          }
-        }
-        // Refresh conversation after adding tool results
-        if (conversation) {
-          conversation = this.conversationManager.getConversation(context.conversationId);
+          await this.conversationManager.addMessage(context.conversationId, "tool", toolResult.content, { toolCallId: toolResult.toolCallId, runId: context.runId });
         }
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      await context.streamEmitter.emitLifecycleError(context.runId, errorMessage);
-      await activityRecorder.recordAgentRunError(context.agentId, context.conversationId, context.runId, errorMessage);
       console.error(`[ZuckermanRuntime] Error in run:`, err);
+      await context.streamEmitter.emitLifecycleError(context.runId, err instanceof Error ? err.message : String(err));
       throw err;
     }
   }
