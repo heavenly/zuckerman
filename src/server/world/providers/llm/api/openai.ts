@@ -52,6 +52,7 @@ export class OpenAIProvider implements LLMProvider {
       temperature = 1.0,
       maxTokens,
       tools,
+      responseFormat,
     } = params;
 
     const requestBody = toOpenAIRequest({
@@ -62,6 +63,7 @@ export class OpenAIProvider implements LLMProvider {
       maxTokens,
       tools,
       stream: false,
+      responseFormat,
     });
 
     try {

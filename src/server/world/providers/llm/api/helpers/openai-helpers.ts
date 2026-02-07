@@ -25,6 +25,7 @@ export interface OpenAIRequest {
   tool_choice?: "auto" | "required" | { type: "function"; function: { name: string } };
   stream?: boolean;
   stop?: string | string[];
+  response_format?: { type: "json_object" | "text" };
 }
 
 export interface OpenAIResponse {
@@ -86,6 +87,7 @@ export function toOpenAIRequest(params: {
   maxTokens?: number;
   tools?: LLMTool[];
   stream?: boolean;
+  responseFormat?: "json_object" | "text";
 }): OpenAIRequest {
   const messages: OpenAIRequest["messages"] = [];
 
@@ -158,6 +160,7 @@ export function toOpenAIRequest(params: {
     ...(params.maxTokens !== undefined ? { max_tokens: params.maxTokens } : {}), // Only include if provided (no limit)
     tools,
     stream: params.stream,
+    ...(params.responseFormat ? { response_format: { type: params.responseFormat } } : {}),
   };
 }
 

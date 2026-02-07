@@ -15,6 +15,7 @@ import type { RunContext } from "@server/world/providers/llm/context.js";
 import { formatMemoriesForPrompt } from "../memory/prompt-formatter.js";
 import { StreamEventEmitter } from "@server/world/communication/stream-emitter.js";
 import { System1 } from "../system1/system1-central.js";
+import { System2 } from "../system2/system2-central.js";
 
 export class Self {
   readonly agentId: string;
@@ -139,12 +140,82 @@ export class Self {
     await context.streamEmitter.emitLifecycleStart(context.runId, context.message);
 
     try {
-      const system1 = new System1(this.conversationManager, context);
-      return await system1.run();
+      console.log(`[Self] Selecting system for message: "${context.message.substring(0, 100)}${context.message.length > 100 ? '...' : ''}"`);
+      const selectedSystem = await this.selectSystem(context);
+      console.log(`[Self] Selected ${selectedSystem.toUpperCase()} for runId: ${context.runId}`);
+      
+      if (selectedSystem === "system2") {
+        console.log(`[Self] Routing to System2`);
+        const system2 = new System2(this.conversationManager, context);
+        return await system2.run();
+      } else {
+        console.log(`[Self] Routing to System1`);
+        const system1 = new System1(this.conversationManager, context);
+        return await system1.run();
+      }
     } catch (err) {
       console.error(`[ZuckermanRuntime] Error in run:`, err);
       await context.streamEmitter.emitLifecycleError(context.runId, err instanceof Error ? err.message : String(err));
       throw err;
+    }
+  }
+
+  /**
+   * Determine which system (1 or 2) should handle the current message
+   */
+  private async selectSystem(context: RunContext): Promise<"system1" | "system2"> {
+    console.log(`[Self] Starting system selection for runId: ${context.runId}`);
+    const llmService = new LLMService(context.llmModel, context.streamEmitter, context.runId);
+    
+    const conversation = this.conversationManager.getConversation(context.conversationId);
+    const conversationContext = conversation?.messages.slice(-3).map(m => `${m.role}: ${m.content}`).join("\n") || "No previous messages";
+    
+    const systemSelectionPrompt = `You are a routing system that determines which processing system should handle a user message.
+
+System 1: Fast, intuitive, reactive processing. Use for:
+- Simple questions and answers
+- Direct tool usage requests
+- Quick information retrieval
+- Straightforward tasks
+- Casual conversation
+
+System 2: Deliberate, analytical, multi-module processing. Use for:
+- Complex problem-solving requiring multiple steps
+- Tasks needing planning and decomposition
+- Situations requiring reflection and criticism
+- Multi-faceted requests with multiple considerations
+- Tasks that benefit from parallel module evaluation
+
+User message: "${context.message}"
+
+Conversation context: ${conversationContext}
+
+Respond with ONLY "system1" or "system2" - no other text.`;
+
+    try {
+      console.log(`[Self] Calling LLM for system selection`);
+      const result = await llmService.call({
+        messages: [
+          {
+            role: "system",
+            content: systemSelectionPrompt,
+          },
+        ],
+        temperature: 0.1,
+        availableTools: [],
+      });
+
+      const rawSelection = result.content.trim();
+      const selection = rawSelection.toLowerCase();
+      console.log(`[Self] LLM raw response: "${rawSelection}"`);
+      
+      const finalSelection = (selection === "system2" || selection.includes("2")) ? "system2" : "system1";
+      console.log(`[Self] Parsed selection: ${finalSelection}`);
+      
+      return finalSelection;
+    } catch (error) {
+      console.warn(`[Self] System selection failed, defaulting to System1:`, error);
+      return "system1";
     }
   }
 }

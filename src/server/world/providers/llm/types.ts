@@ -29,6 +29,7 @@ export interface LLMCallParams {
   temperature?: number;
   maxTokens?: number;
   tools?: LLMTool[];
+  responseFormat?: "json_object" | "text";
 }
 
 export interface LLMResponse {
