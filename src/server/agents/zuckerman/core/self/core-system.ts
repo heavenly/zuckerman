@@ -1,7 +1,5 @@
 import { streamText } from "ai";
-import type { Tool, LanguageModel } from "ai";
-import { convertToModelMessages } from "@server/world/providers/llm/helpers.js";
-import type { ConversationMessage } from "@server/agents/zuckerman/conversations/types.js";
+import type { Tool, LanguageModel, ModelMessage } from "ai";
 import { LLMProvider } from "@server/world/providers/llm/index.js";
 import { ToolRegistry } from "@server/agents/zuckerman/tools/registry.js";
 import { loadConfig } from "@server/world/config/index.js";
@@ -26,7 +24,7 @@ export class CoreSystem {
     runId: string,
     conversationId: string,
     message: string,
-    conversationMessages: ConversationMessage[]
+    conversationMessages: ModelMessage[]
   ): Promise<{
     runId: string;
     response: string;
@@ -73,31 +71,32 @@ export class CoreSystem {
     });
     console.log(`[CoreSystem] Memories retrieved - length: ${memoriesText.length}`);
 
-    const conversationOnlyMessages = conversationMessages.filter(m => m.role !== "system");
+    // Start with existing conversation messages (excluding system messages)
+    let messages: ModelMessage[] = conversationMessages.filter(m => m.role !== "system");
     
     for (let iterations = 0; iterations < MAX_ITERATIONS; iterations++) {
       console.log(`[CoreSystem] Iteration ${iterations + 1}/${MAX_ITERATIONS}`);
-      const now = Date.now();
-      const messagesWithSystem: ConversationMessage[] = [
+      
+      // Build messages with system prompt
+      const messagesWithSystem: ModelMessage[] = [
         {
           role: "system",
           content: `${systemPrompt}\n\n${memoriesText}`.trim(),
-          timestamp: now,
         },
-        ...conversationOnlyMessages,
+        ...messages,
       ];
 
-      if (conversationOnlyMessages.at(-1)?.role === "assistant") {
+      // Add continuation prompt if last message was assistant
+      if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
         messagesWithSystem.push({
           role: "user",
           content: "Please continue.",
-          timestamp: now,
         });
       }
 
       const streamResult = await streamText({
         model: llmModel,
-        messages: convertToModelMessages(messagesWithSystem),
+        messages: messagesWithSystem,
         temperature,
         tools: Object.keys(availableTools).length > 0 ? availableTools : undefined,
       });
@@ -115,24 +114,20 @@ export class CoreSystem {
 
       // Handle tool calls
       const toolCalls = await streamResult.toolCalls;
-      if (toolCalls?.length) {
-        console.log(`[CoreSystem] Tool calls: ${toolCalls.map(t => t.toolName).join(", ")}`);
-      }
-      await Promise.all((toolCalls || []).map(toolCall =>
-        this.emitEvent({
-          type: "stream.tool.call",
-          conversationId,
-          runId,
-          tool: toolCall.toolName,
-          toolArgs: toolCall.input,
-        })
-      ));
-
       const usage = await streamResult.usage;
       const tokensUsed = usage?.totalTokens;
 
-      // If there are tool calls, continue iterating (tools need to be executed)
+      // If there are tool calls, execute them and add to messages
       if (toolCalls?.length) {
+        const { assistantMsg, toolResultMsgs } = await this.executeToolCalls(
+          toolCalls,
+          content,
+          availableTools,
+          messagesWithSystem,
+          conversationId,
+          runId
+        );
+        messages.push(assistantMsg, ...toolResultMsgs);
         continue;
       }
 
@@ -160,8 +155,18 @@ export class CoreSystem {
         console.warn(`[CoreSystem] Validation error:`, error);
       }
 
+      // Add assistant response to messages
+      messages.push({
+        role: "assistant",
+        content: content,
+      });
+      
       // Only save if responding to a real user message (not the internal "Please continue" prompt)
-      if (conversationOnlyMessages.at(-1)?.role !== "assistant") {
+      // Check if last message before this assistant response was a user message
+      const lastMessageBeforeAssistant = messages.length > 1 ? messages[messages.length - 2] : null;
+      const isRespondingToUser = lastMessageBeforeAssistant?.role === "user";
+      
+      if (isRespondingToUser) {
         await this.emitEvent({ type: "write", conversationId, content, role: "assistant", runId });
       }
       console.log(`[CoreSystem] Completed - tokens: ${tokensUsed ?? 'N/A'}`);
@@ -177,6 +182,109 @@ export class CoreSystem {
       this.emitEvent({ type: "stream.lifecycle", conversationId, runId, phase: "end", tokensUsed: 0 }),
     ]);
     return { runId, response: finalResponse };
+  }
+
+  /**
+   * Execute tool calls and return assistant message with tool calls + tool result messages
+   */
+  private async executeToolCalls(
+    toolCalls: Array<{ toolCallId: string; toolName: string; input: unknown }>,
+    textContent: string,
+    availableTools: Record<string, Tool>,
+    contextMessages: ModelMessage[],
+    conversationId: string,
+    runId: string
+  ): Promise<{ assistantMsg: ModelMessage; toolResultMsgs: ModelMessage[] }> {
+    console.log(`[CoreSystem] Tool calls: ${toolCalls.map(t => t.toolName).join(", ")}`);
+    
+    // Create assistant message with tool calls
+    const toolCallParts = toolCalls.map(tc => ({
+      type: "tool-call" as const,
+      toolCallId: tc.toolCallId,
+      toolName: tc.toolName,
+      input: tc.input,
+    }));
+    
+    const assistantMsg: ModelMessage = {
+      role: "assistant",
+      content: textContent 
+        ? [{ type: "text" as const, text: textContent }, ...toolCallParts]
+        : toolCallParts,
+    };
+    
+    // Execute tools and create result messages
+    const toolResultMsgs: ModelMessage[] = await Promise.all(
+      toolCalls.map(async (toolCall): Promise<ModelMessage> => {
+        await this.emitEvent({
+          type: "stream.tool.call",
+          conversationId,
+          runId,
+          tool: toolCall.toolName,
+          toolArgs: typeof toolCall.input === "object" && toolCall.input !== null && !Array.isArray(toolCall.input)
+            ? toolCall.input as Record<string, unknown>
+            : {},
+        });
+        
+        const tool = availableTools[toolCall.toolName];
+        if (!tool?.execute) {
+          const error = `Tool "${toolCall.toolName}" not found or has no execute function`;
+          await this.emitEvent({
+            type: "stream.tool.result",
+            conversationId,
+            runId,
+            tool: toolCall.toolName,
+            toolResult: error,
+          });
+          return this.createToolResultMessage(toolCall, error);
+        }
+        
+        try {
+          const result = await tool.execute(toolCall.input, {
+            toolCallId: toolCall.toolCallId,
+            messages: contextMessages,
+          });
+          const output = typeof result === "string" ? result : JSON.stringify(result);
+          await this.emitEvent({
+            type: "stream.tool.result",
+            conversationId,
+            runId,
+            tool: toolCall.toolName,
+            toolResult: output,
+          });
+          return this.createToolResultMessage(toolCall, output);
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          await this.emitEvent({
+            type: "stream.tool.result",
+            conversationId,
+            runId,
+            tool: toolCall.toolName,
+            toolResult: `Error: ${errorMsg}`,
+          });
+          return this.createToolResultMessage(toolCall, `Error: ${errorMsg}`);
+        }
+      })
+    );
+    
+    return { assistantMsg, toolResultMsgs };
+  }
+
+  /**
+   * Create a tool result message from a tool call and output
+   */
+  private createToolResultMessage(
+    toolCall: { toolCallId: string; toolName: string },
+    output: string
+  ): ModelMessage {
+    return {
+      role: "tool" as const,
+      content: [{
+        type: "tool-result" as const,
+        toolCallId: toolCall.toolCallId,
+        toolName: toolCall.toolName,
+        output: { type: "text" as const, value: output },
+      }],
+    };
   }
 
   private async initialize(

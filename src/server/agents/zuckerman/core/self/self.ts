@@ -6,7 +6,7 @@ import { UnifiedMemoryManager } from "@server/agents/zuckerman/core/memory/manag
 import { resolveMemorySearchConfig } from "@server/agents/zuckerman/core/memory/config.js";
 import { CoreSystem } from "./core-system.js";
 import type { AgentEvent } from "./events.js";
-import type { ConversationMessage } from "@server/agents/zuckerman/conversations/types.js";
+import { convertToModelMessages } from "@server/world/providers/llm/helpers.js";
 
 export type EventHandler<T extends AgentEvent = AgentEvent> = (event: T) => void | Promise<void>;
 
@@ -42,11 +42,15 @@ export class Self {
 
     try {
       const coreSystem = new CoreSystem(this.agentId, (event) => this.emit(event));
+      // Convert ConversationMessage[] to ModelMessage[]
+      const modelMessages = params.conversationMessages 
+        ? convertToModelMessages(params.conversationMessages)
+        : [];
       return await coreSystem.run(
         runId,
         conversationId,
         message,
-        params.conversationMessages || []
+        modelMessages
       );
     } catch (err) {
       await this.emit({
