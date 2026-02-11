@@ -54,8 +54,8 @@ export class AnthropicProvider implements LLMProvider {
         "anthropic-version": "2023-06-01",
       };
 
-      // Add beta header for sonnet models with extended context
-      if (this.model.id.startsWith("claude-sonnet-")) {
+      // Add beta header for models with extended context (Sonnet 4.5+ and Opus 4.6+)
+      if (this.model.id.startsWith("claude-sonnet-") || this.model.id.startsWith("claude-opus-4-6")) {
         headers["anthropic-beta"] = "context-1m-2025-08-07";
       }
 
@@ -123,8 +123,8 @@ export class AnthropicProvider implements LLMProvider {
         "anthropic-version": "2023-06-01",
       };
 
-      // Add beta header for sonnet models with extended context
-      if (this.model.id.startsWith("claude-sonnet-")) {
+      // Add beta header for models with extended context (Sonnet 4.5+ and Opus 4.6+)
+      if (this.model.id.startsWith("claude-sonnet-") || this.model.id.startsWith("claude-opus-4-6")) {
         headers["anthropic-beta"] = "context-1m-2025-08-07";
       }
 

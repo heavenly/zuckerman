@@ -74,11 +74,13 @@ export class LLMService {
     messages: LLMMessage[];
     temperature?: number;
     availableTools: LLMTool[];
+    responseFormat?: "json_object" | "text";
   }): Promise<LLMCallResult> {
-    const { messages, temperature, availableTools } = params;
+    const { messages, temperature, availableTools, responseFormat } = params;
 
     // Try streaming first if requested and model supports it
-    if (this.streamEmitter) {
+    // Skip streaming when json_object format is requested (streaming doesn't support responseFormat properly)
+    if (this.streamEmitter && responseFormat !== "json_object") {
       let accumulatedContent = "";
       let streamingSucceeded = false;
       
@@ -123,6 +125,7 @@ export class LLMService {
       messages,
       temperature,
       tools: availableTools,
+      responseFormat,
     });
 
     // If streaming was requested but we used non-streaming (due to tools or failure),

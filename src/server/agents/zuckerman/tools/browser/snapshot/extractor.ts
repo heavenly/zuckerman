@@ -1,17 +1,20 @@
 /**
  * Browser snapshot extraction logic
- * Extracts meaningful content from pages (like OpenClaw's approach)
- * This code runs in the browser context via page.evaluate()
+ * Extracts meaningful content and generates refs for elements
  */
 
 export interface SnapshotOptions {
   selector: string | null;
+  frame?: string | null;
   interactiveOnly: boolean;
+  compact: boolean;
   maxChars: number;
+  depth?: number;
 }
 
 export interface SnapshotElement {
   ref: number;
+  ariaRef?: string;
   role: string;
   tag: string;
   text?: string;
@@ -28,6 +31,7 @@ export interface SnapshotElement {
 export interface SnapshotResult {
   snapshot: string;
   elements: SnapshotElement[];
+  refs: Record<string, { role: string; name?: string; nth?: number }>;
   stats: {
     total: number;
     interactive: number;
@@ -40,21 +44,34 @@ export interface SnapshotError {
 
 /**
  * JavaScript code that runs in browser context to extract meaningful content
- * This is passed to page.evaluate() as a string
  */
 export const extractSnapshotCode = `
 (options) => {
-  const { selector, interactiveOnly, maxChars } = options;
+  const { selector, frame, interactiveOnly, compact, maxChars, depth } = options;
   
   // Get root element (scoped or full page)
-  const root = selector ? document.querySelector(selector) : document.body;
+  let root = selector ? document.querySelector(selector) : document.body;
+  
+  // Handle frame selector
+  if (frame && !selector) {
+    const frameEl = document.querySelector(frame);
+    if (frameEl && frameEl.contentDocument) {
+      root = frameEl.contentDocument.body;
+    } else {
+      return { error: \`Frame "\${frame}" not found or not accessible\` };
+    }
+  }
+  
   if (!root) {
     return { error: \`Selector "\${selector}" not found\` };
   }
 
   const elements = [];
+  const refs = {};
   let refCounter = 0;
   let interactiveCount = 0;
+  let currentDepth = 0;
+  const maxDepth = depth || 100;
 
   // Helper to check if element is visible
   const isVisible = (el) => {
@@ -68,7 +85,6 @@ export const extractSnapshotCode = `
 
   // Helper to get meaningful text content
   const getTextContent = (el, maxLength) => {
-    // Get direct text (not from children)
     let text = "";
     for (const node of Array.from(el.childNodes)) {
       if (node.nodeType === Node.TEXT_NODE) {
@@ -77,14 +93,12 @@ export const extractSnapshotCode = `
     }
     text = text.trim();
     
-    // If no direct text, try aria-label or title
     if (!text) {
       text = el.getAttribute("aria-label") || el.getAttribute("title") || "";
     }
     
-    // For headings and paragraphs, get full text content
     const tag = el.tagName.toLowerCase();
-    if (["h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "td", "th"].includes(tag)) {
+    if (["h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "td", "th", "label"].includes(tag)) {
       text = el.textContent?.trim() || text;
     }
     
@@ -97,17 +111,14 @@ export const extractSnapshotCode = `
     const tag = el.tagName.toLowerCase();
     const role = el.getAttribute("role");
     
-    // Interactive tags
     if (["button", "input", "select", "textarea", "a"].includes(tag)) {
       return true;
     }
     
-    // Interactive roles
     if (role && ["button", "link", "checkbox", "radio", "textbox", "combobox", "menuitem", "tab"].includes(role)) {
       return true;
     }
     
-    // Elements with click handlers or tabindex
     if (el.hasAttribute("onclick") || el.hasAttribute("tabindex")) {
       return true;
     }
@@ -115,62 +126,65 @@ export const extractSnapshotCode = `
     return false;
   };
 
-  // Walk the DOM tree
-  const walker = document.createTreeWalker(
-    root,
-    NodeFilter.SHOW_ELEMENT,
-    {
-      acceptNode: (node) => {
-        const el = node;
-        
-        // Skip script, style, meta, etc.
-        const tag = el.tagName.toLowerCase();
-        if (["script", "style", "meta", "link", "noscript", "svg", "path"].includes(tag)) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        
-        // If interactive only, skip non-interactive elements
-        if (interactiveOnly && !isInteractive(el)) {
-          // But still check children
-          return NodeFilter.FILTER_SKIP;
-        }
-        
-        return NodeFilter.FILTER_ACCEPT;
-      },
-    },
-  );
-
-  let node;
-  while ((node = walker.nextNode())) {
-    const el = node;
+  // Recursive walk function with depth control
+  const walkElement = (el, depth) => {
+    if (depth > maxDepth) return;
     
-    // Skip if not visible
-    if (!isVisible(el)) {
-      continue;
+    // Skip script, style, meta, etc.
+    const tag = el.tagName.toLowerCase();
+    if (["script", "style", "meta", "link", "noscript"].includes(tag)) {
+      return;
     }
     
-    const tag = el.tagName.toLowerCase();
+    if (!isVisible(el)) {
+      return;
+    }
+    
     const role = el.getAttribute("role") || tag;
     const text = getTextContent(el, maxChars);
     const label = el.getAttribute("aria-label") || el.getAttribute("title") || undefined;
+    const isElInteractive = isInteractive(el);
+    
+    // Skip if interactive only and not interactive
+    if (interactiveOnly && !isElInteractive && !text && !label) {
+      // Continue walking children
+      for (const child of Array.from(el.children)) {
+        walkElement(child, depth + 1);
+      }
+      return;
+    }
     
     // Only include elements with meaningful content or interactive elements
-    if (!text && !label && !isInteractive(el)) {
-      continue;
+    if (!text && !label && !isElInteractive) {
+      // Continue walking children
+      for (const child of Array.from(el.children)) {
+        walkElement(child, depth + 1);
+      }
+      return;
     }
     
     // Skip empty divs/spans unless they're interactive
-    const isElInteractive = isInteractive(el);
     if ((tag === "div" || tag === "span") && !text && !label && !isElInteractive) {
-      continue;
+      for (const child of Array.from(el.children)) {
+        walkElement(child, depth + 1);
+      }
+      return;
     }
 
     if (isElInteractive) {
       interactiveCount++;
     }
 
+    const ref = refCounter++;
+    const ariaRef = \`aria-ref:\${ref}\`;
+    const refKey = \`e\${ref}\`;
+    
+    // Set aria-ref attribute for later reference
+    el.setAttribute("aria-ref", ariaRef);
+    
     const element = {
-      ref: refCounter++,
+      ref,
+      ariaRef,
       role,
       tag,
       visible: true,
@@ -203,13 +217,31 @@ export const extractSnapshotCode = `
     }
 
     elements.push(element);
-  }
+    
+    // Build refs map
+    const name = label || text || tag;
+    refs[refKey] = {
+      role,
+      name: name?.substring(0, 100),
+    };
+
+    // Continue walking children
+    for (const child of Array.from(el.children)) {
+      walkElement(child, depth + 1);
+    }
+  };
+
+  // Start walking from root
+  walkElement(root, 0);
 
   // Build compact text representation
   const lines = [];
   for (const el of elements) {
-    let line = \`[\${el.ref}] <\${el.tag}>\`;
-    if (el.role !== el.tag) {
+    let line = compact 
+      ? \`[\${el.ref}]\`
+      : \`[\${el.ref}] <\${el.tag}>\`;
+      
+    if (!compact && el.role !== el.tag) {
       line += \` role="\${el.role}"\`;
     }
     if (el.label) {
@@ -239,6 +271,7 @@ export const extractSnapshotCode = `
   return {
     snapshot: lines.join("\\n"),
     elements,
+    refs,
     stats: {
       total: elements.length,
       interactive: interactiveCount,
@@ -246,10 +279,3 @@ export const extractSnapshotCode = `
   };
 }
 `;
-
-/**
- * Helper function to create the evaluation function
- */
-export function createSnapshotExtractor(options: SnapshotOptions): string {
-  return `(${extractSnapshotCode})(${JSON.stringify(options)})`;
-}

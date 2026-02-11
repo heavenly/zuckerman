@@ -36,11 +36,11 @@ const defaultConfig: ZuckermanConfig = {
 // Default trait mappings to initialize in config
 const defaultTraitMappings: Record<string, Record<ModelTrait, string>> = {
   anthropic: {
-    fastCheap: "claude-haiku-4-5",
-    cheap: "claude-haiku-4-5",
-    fast: "claude-haiku-4-5",
-    highQuality: "claude-opus-4-5-20251101",
-    largeContext: "claude-sonnet-4-5",
+    fastCheap: "claude-opus-4-6",
+    cheap: "claude-opus-4-6",
+    fast: "claude-opus-4-6",
+    highQuality: "claude-opus-4-6",
+    largeContext: "claude-opus-4-6",
   },
   openai: {
     fastCheap: "gpt-5.2",
@@ -53,7 +53,7 @@ const defaultTraitMappings: Record<string, Record<ModelTrait, string>> = {
     fastCheap: "deepseek/deepseek-chat",
     cheap: "deepseek/deepseek-chat",
     fast: "deepseek/deepseek-chat",
-    highQuality: "anthropic/claude-opus-4-5-20251101",
+    highQuality: "anthropic/claude-opus-4-6",
     largeContext: "openai/gpt-5.2",
   },
 };

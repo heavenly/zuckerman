@@ -1,95 +1,45 @@
-import { chromium, type Browser, type Page, type BrowserContext } from "playwright-core";
 import type { SecurityContext } from "@server/world/execution/security/types.js";
 import { isToolAllowed } from "@server/world/execution/security/policy/tool-policy.js";
-import type { Tool, ToolDefinition, ToolResult } from "../terminal/index.js";
+import type { Tool } from "../terminal/index.js";
 import { join, dirname } from "node:path";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import {
-  getBrowserDataDir,
   getAgentWorkspaceDir,
   getWorkspaceScreenshotsDir,
   getWorkspaceScreenshotPath,
 } from "@server/world/homedir/paths.js";
-import { existsSync, mkdirSync, writeFileSync, statSync } from "node:fs";
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
-import { extractSnapshotCode, type SnapshotResult, type SnapshotError } from "./snapshot.js";
-
-const BROWSER_DATA_DIR = getBrowserDataDir();
-
-// Browser manager to maintain a single browser instance across calls
-class BrowserManager {
-  private browser: Browser | null = null;
-  private context: BrowserContext | null = null;
-  private page: Page | null = null;
-
-  async getBrowser(): Promise<Browser> {
-    if (!this.browser || !this.browser.isConnected()) {
-      // Ensure browser data directory exists
-      if (!existsSync(BROWSER_DATA_DIR)) {
-        mkdirSync(BROWSER_DATA_DIR, { recursive: true });
-      }
-
-      this.browser = await chromium.launch({
-        headless: false, // Show browser window
-        channel: "chrome", // Try Chrome first, falls back to chromium
-        timeout: 30000, // 30 second timeout for launch
-        args: [
-          "--start-maximized", // Start maximized so it's visible
-          "--disable-blink-features=AutomationControlled", // Don't show automation banner
-        ],
-      });
-
-      this.context = await this.browser.newContext({
-        viewport: null, // Use full screen
-      });
-
-      this.page = await this.context.newPage();
-
-      // Bring browser to front (macOS)
-      if (process.platform === "darwin") {
-        try {
-          const execAsync = promisify(exec);
-          await execAsync(`osascript -e 'tell application "System Events" to set frontmost of every process whose name contains "Chrome" to true'`);
-        } catch {
-          // Ignore if it fails
-        }
-      }
-    }
-    return this.browser;
-  }
-
-  async getPage(): Promise<Page> {
-    await this.getBrowser();
-    if (!this.page || this.page.isClosed()) {
-      // If context is disconnected, getBrowser() will recreate it
-      if (!this.context || !this.context.browser()?.isConnected()) {
-        await this.getBrowser();
-      }
-      // Create new page from existing context
-      this.page = await this.context!.newPage();
-    }
-    return this.page;
-  }
-
-  async close(): Promise<void> {
-    if (this.page && !this.page.isClosed()) {
-      await this.page.close().catch(() => { });
-    }
-    if (this.context) {
-      await this.context.close().catch(() => { });
-    }
-    if (this.browser && this.browser.isConnected()) {
-      await this.browser.close();
-    }
-    this.browser = null;
-    this.context = null;
-    this.page = null;
-  }
-
-  isOpen(): boolean {
-    return this.browser !== null && this.browser.isConnected();
-  }
-}
+import { BrowserManager } from "./browser-manager.js";
+import { executeAction } from "./actions/index.js";
+import { validateActionRequest } from "./utils.js";
+import { takeSnapshot } from "./snapshot/snapshot.js";
+import {
+  getCookies,
+  setCookie,
+  clearCookies,
+  getStorage,
+  setStorage,
+  clearStorage,
+} from "./storage/index.js";
+import {
+  setOffline,
+  setExtraHeaders,
+  setHttpCredentials,
+  setGeolocation,
+  emulateMedia,
+  setTimezone,
+  setLocale,
+  emulateDevice,
+} from "./emulation/index.js";
+import { setupDebugListeners, getConsoleMessages, getPageErrors, getNetworkRequests } from "./debug/index.js";
+import {
+  handleFileUpload,
+  handleDialog,
+  waitForDownload,
+  downloadFile,
+  getResponseBody,
+  highlightElement,
+} from "./files/index.js";
+import type { ActionRequest, SnapshotOptions } from "./types.js";
 
 const browserManager = new BrowserManager();
 
@@ -97,481 +47,481 @@ export function createBrowserTool(): Tool {
   return {
     definition: {
       name: "browser",
-      description: "Control Chrome/Chromium browser via CDP. Navigate, take snapshots, interact with pages. Browser stays open indefinitely until explicitly closed with the 'close' action. Screenshots and snapshots are saved to local file paths (workspace/screenshots/ and workspace/snapshots/). Snapshots extract meaningful content and save to files to prevent context overflow - use terminal/file tools to read/search snapshot files when needed.",
+      description: `Control Chrome/Chromium browser. Navigate, take snapshots, interact with pages, manage tabs, cookies, storage, and more.
+      
+Actions:
+- navigate: Navigate to URL
+- snapshot: Take page snapshot (ai/aria format)
+- screenshot: Take screenshot
+- tabs: List/open/focus/close tabs
+- act: Perform actions (click, type, press, hover, scroll, drag, select, fill, resize, wait, evaluate)
+- cookies: Get/set/clear cookies
+- storage: Get/set/clear localStorage/sessionStorage
+- emulation: Set offline, headers, credentials, geolocation, media, timezone, locale, device
+- debug: Get console messages, errors, network requests
+- files: Handle uploads, dialogs, downloads
+- status: Get browser status
+- start/stop: Control browser lifecycle
+
+Snapshots use ref-based element identification (e.g., "e12") for stable element references.`,
       parameters: {
         type: "object",
         properties: {
           action: {
             type: "string",
-            description: "Action to perform: navigate, snapshot, screenshot, click, type, evaluate, close",
+            description:
+              "Action: navigate, snapshot, screenshot, tabs, act, cookies, storage, emulation, debug, files, status, start, stop, close",
           },
-          url: {
+          // Navigation
+          url: { type: "string", description: "URL to navigate to" },
+          // Tabs
+          tabAction: {
             type: "string",
-            description: "URL to navigate to (for navigate action)",
+            description: "Tab action: list, open, focus, close",
           },
-          selector: {
-            type: "string",
-            description: "CSS selector for element (for click, type actions)",
+          targetId: { type: "string", description: "Tab target ID" },
+          // Actions
+          request: {
+            type: "object",
+            description: "Action request object (for act action)",
           },
-          text: {
-            type: "string",
-            description: "Text to type (for type action)",
-          },
-          code: {
-            type: "string",
-            description: "JavaScript code to evaluate (for evaluate action)",
-          },
-          fullPage: {
-            type: "boolean",
-            description: "Take full page screenshot (for screenshot action)",
-          },
-          savePath: {
-            type: "string",
-            description: "File path to save screenshot (for screenshot action). If not provided, saves to homedir/screenshots/",
-          },
-          format: {
-            type: "string",
-            description: "Snapshot format: aria or ai (for snapshot action). Default: ai",
-          },
-          snapshotSelector: {
-            type: "string",
-            description: "CSS selector to scope snapshot to specific element (for snapshot action)",
-          },
-          interactive: {
-            type: "boolean",
-            description: "Focus on interactive elements only (for snapshot action)",
-          },
-          maxChars: {
-            type: "number",
-            description: "Maximum characters per text element (for snapshot action). Default: 200",
-          },
+          // Snapshot
+          format: { type: "string", description: "Snapshot format: ai or aria" },
+          selector: { type: "string", description: "CSS selector" },
+          frame: { type: "string", description: "Frame selector" },
+          interactive: { type: "boolean", description: "Interactive elements only" },
+          compact: { type: "boolean", description: "Compact format" },
+          depth: { type: "number", description: "Max DOM depth" },
+          maxChars: { type: "number", description: "Max characters per element" },
+          limit: { type: "number", description: "Limit nodes (ARIA)" },
+          labels: { type: "boolean", description: "Generate labels overlay" },
+          refs: { type: "string", description: "Refs mode: aria or role" },
+          mode: { type: "string", description: "Snapshot mode: efficient" },
+          // Screenshot
+          fullPage: { type: "boolean", description: "Full page screenshot" },
+          ref: { type: "string", description: "Element ref for element screenshot" },
+          savePath: { type: "string", description: "Save path" },
+          // Cookies
+          cookie: { type: "object", description: "Cookie object" },
+          // Storage
+          storageKind: { type: "string", description: "Storage kind: local or session" },
+          key: { type: "string", description: "Storage key" },
+          value: { type: "string", description: "Storage value" },
+          // Emulation
+          offline: { type: "boolean", description: "Offline mode" },
+          headers: { type: "object", description: "HTTP headers" },
+          credentials: { type: "object", description: "HTTP credentials" },
+          geolocation: { type: "object", description: "Geolocation" },
+          media: { type: "object", description: "Media emulation" },
+          timezoneId: { type: "string", description: "Timezone ID" },
+          locale: { type: "string", description: "Locale" },
+          device: { type: "string", description: "Device name" },
+          // Debug
+          debugType: { type: "string", description: "Debug type: console, errors, requests" },
+          level: { type: "string", description: "Console message level" },
+          filter: { type: "string", description: "Network request filter" },
+          clear: { type: "boolean", description: "Clear after get" },
+          // Files
+          fileAction: { type: "string", description: "File action: upload, dialog, download, wait-download, response-body, highlight" },
+          paths: { type: "array", items: { type: "string" }, description: "File paths for upload" },
+          accept: { type: "boolean", description: "Accept dialog" },
+          promptText: { type: "string", description: "Prompt text" },
+          timeoutMs: { type: "number", description: "Timeout in milliseconds" },
         },
         required: ["action"],
       },
     },
     handler: async (params, securityContext, executionContext) => {
-      console.log(params);
       try {
         const { action } = params;
 
         if (typeof action !== "string") {
-          return {
-            success: false,
-            error: "action must be a string",
-          };
+          return { success: false, error: "action must be a string" };
         }
 
-        // Check tool security
+        // Security check
         if (securityContext) {
           const toolAllowed = isToolAllowed("browser", securityContext.toolPolicy);
           if (!toolAllowed) {
-            return {
-              success: false,
-              error: "Browser tool is not allowed by security policy",
-            };
+            return { success: false, error: "Browser tool is not allowed by security policy" };
           }
         }
 
-        // Validate action before launching browser
-        const validActions = ["navigate", "snapshot", "screenshot", "click", "type", "evaluate", "close"];
-        if (!validActions.includes(action)) {
-          return {
-            success: false,
-            error: `Unknown action: ${action}. Valid actions are: ${validActions.join(", ")}`,
-          };
-        }
+        const agentId = securityContext?.agentId || "default";
 
-        // Handle close action early (doesn't need browser)
+        // Handle browser lifecycle actions first
         if (action === "close") {
           await browserManager.close();
-          return {
-            success: true,
-            result: {
-              action: "closed",
-              message: "Browser closed successfully",
-            },
-          };
+          return { success: true, result: { message: "Browser closed successfully" } };
         }
 
-        // Validate action-specific parameters before launching browser
-        if (action === "navigate" && typeof params.url !== "string") {
-          return { success: false, error: "url is required for navigate action" };
-        }
-        if (action === "click" && typeof params.selector !== "string") {
-          return { success: false, error: "selector is required for click action" };
-        }
-        if (action === "type" && (typeof params.selector !== "string" || typeof params.text !== "string")) {
-          return { success: false, error: "selector and text are required for type action" };
-        }
-        if (action === "evaluate" && typeof params.code !== "string") {
-          return { success: false, error: "code is required for evaluate action" };
+        if (action === "stop") {
+          await browserManager.close();
+          return { success: true, result: { message: "Browser stopped successfully" } };
         }
 
-        // Get or create browser instance (reused across calls)
-        const page = await browserManager.getPage();
+        if (action === "start" || action === "status") {
+          const status = await browserManager.getStatus();
+          return { success: true, result: status };
+        }
+
+        // Get page for other actions
+        const page = await browserManager.getPage(params.targetId as string | undefined);
+
+        // Setup debug listeners (idempotent - only sets up once per page)
+        setupDebugListeners(page);
 
         switch (action) {
           case "navigate": {
-            const url = typeof params.url === "string" ? params.url : undefined;
+            const url = params.url as string;
             if (!url) {
               return { success: false, error: "url is required for navigate action" };
             }
-            await page.goto(url, {
-              waitUntil: "domcontentloaded", // Faster than networkidle
-              timeout: 30000, // 30 second timeout
-            });
+            await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+            const tab = await browserManager.getTab(params.targetId as string | undefined);
             return {
               success: true,
-              result: {
-                url: page.url(),
-                title: await page.title(),
-              },
+              result: { url: page.url(), title: await page.title().catch(() => "") },
             };
           }
 
           case "snapshot": {
-            const format = (typeof params.format === "string" ? params.format : "ai") as "aria" | "ai";
-            const snapshotSelector = typeof params.snapshotSelector === "string" ? params.snapshotSelector : null;
-            const interactiveOnly = params.interactive === true;
-            const maxChars = typeof params.maxChars === "number" ? params.maxChars : 200;
+            const format = (params.format as "ai" | "aria") || "ai";
+            const options = {
+              format,
+              selector: params.selector as string | undefined,
+              frame: params.frame as string | undefined,
+              interactive: params.interactive as boolean | undefined,
+              compact: params.compact as boolean | undefined,
+              depth: params.depth as number | undefined,
+              maxChars: (params.maxChars as number) || 200,
+              limit: params.limit as number | undefined,
+              labels: params.labels as boolean | undefined,
+              refs: params.refs as "aria" | "role" | undefined,
+              mode: params.mode as "efficient" | undefined,
+              interactiveOnly: params.interactive === true,
+            };
 
-            if (format === "aria") {
-              // ARIA snapshot - get accessible elements
-              const snapshot = await page.evaluate(() => {
-                const elements: Array<{
-                  role: string;
-                  name: string;
-                  type?: string;
-                  value?: string;
-                  checked?: boolean;
-                  selected?: boolean;
-                }> = [];
+            const { path, result, preview } = await takeSnapshot(page, options, agentId);
+            const stats = statSync(path);
 
-                const walker = document.createTreeWalker(
-                  document.body,
-                  NodeFilter.SHOW_ELEMENT,
-                  {
-                    acceptNode: (node) => {
-                      const el = node as Element;
-                      const role = el.getAttribute("role") || el.tagName.toLowerCase();
-                      const name = el.textContent?.trim() || el.getAttribute("aria-label") || "";
-                      if (name || role !== "div") {
-                        return NodeFilter.FILTER_ACCEPT;
-                      }
-                      return NodeFilter.FILTER_SKIP;
-                    },
-                  },
-                );
-
-                let node;
-                while ((node = walker.nextNode())) {
-                  const el = node as Element;
-                  const role = el.getAttribute("role") || el.tagName.toLowerCase();
-                  const name = el.textContent?.trim() || el.getAttribute("aria-label") || "";
-
-                  if (name || ["button", "input", "a", "select"].includes(el.tagName.toLowerCase())) {
-                    elements.push({
-                      role,
-                      name: name.substring(0, 200),
-                      type: (el as HTMLInputElement).type,
-                      value: (el as HTMLInputElement).value,
-                      checked: (el as HTMLInputElement).checked,
-                      selected: (el as HTMLSelectElement).selectedIndex !== -1,
-                    });
-                  }
-                }
-
-                return elements;
-              });
-
-              // Save ARIA snapshot to file if large (prevents context overflow)
-              const snapshotJson = JSON.stringify(snapshot, null, 2);
-              const snapshotSize = Buffer.byteLength(snapshotJson, "utf-8");
-              const maxSizeInMemory = 10 * 1024; // 10KB threshold
-
-              if (snapshotSize > maxSizeInMemory || snapshot.length > 50) {
-                // Save to file
-                const workspaceDir = getAgentWorkspaceDir(securityContext!.agentId);
-                const snapshotsDir = join(workspaceDir, "snapshots");
-                if (!existsSync(snapshotsDir)) {
-                  mkdirSync(snapshotsDir, { recursive: true });
-                }
-
-                const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-                const urlSlug = page.url().replace(/[^a-zA-Z0-9]/g, "-").substring(0, 50);
-                const filename = `snapshot-aria-${timestamp}-${urlSlug}.json`;
-                const snapshotPath = join(snapshotsDir, filename);
-
-                const pageTitle = await page.title();
-                const viewport = page.viewportSize();
-                const snapshotContent = `{
-  "format": "aria",
-  "url": "${page.url()}",
-  "title": "${pageTitle}",
-  "timestamp": "${new Date().toISOString()}",
-  "viewport": ${viewport ? JSON.stringify(viewport) : "null"},
-  "elementCount": ${snapshot.length},
-  "fileSize": {
-    "bytes": ${snapshotSize},
-    "kb": ${(snapshotSize / 1024).toFixed(2)},
-    "mb": ${(snapshotSize / (1024 * 1024)).toFixed(4)}
-  },
-  "elements": ${snapshotJson}
-}`;
-
-                writeFileSync(snapshotPath, snapshotContent, "utf-8");
-
-                // Get actual file size after writing
-                const stats = statSync(snapshotPath);
-                const fileSizeBytes = stats.size;
-                const fileSizeKB = (fileSizeBytes / 1024).toFixed(2);
-                const fileSizeMB = (fileSizeBytes / (1024 * 1024)).toFixed(4);
-
-                return {
-                  success: true,
-                  result: {
-                    format: "aria",
-                    path: snapshotPath,
-                    url: page.url(),
-                    title: pageTitle,
-                    elementCount: snapshot.length,
-                    interactiveCount: snapshot.filter(e => ["button", "input", "select", "textarea", "a"].includes(e.role)).length,
-                    fileSize: {
-                      bytes: fileSizeBytes,
-                      kb: parseFloat(fileSizeKB),
-                      mb: parseFloat(fileSizeMB),
-                    },
-                    viewport: viewport,
-                    preview: snapshot.slice(0, 10),
-                    message: `ARIA snapshot saved to file (${snapshot.length} elements, ${fileSizeKB} KB). Use terminal/file tools to read: ${snapshotPath}`,
-                  },
-                };
-              }
-
-              // Return small snapshots directly
-              const pageTitle = await page.title();
-              const viewport = page.viewportSize();
-              const smallSnapshotJson = JSON.stringify(snapshot, null, 2);
-              const smallSnapshotSize = Buffer.byteLength(smallSnapshotJson, "utf-8");
-
-              return {
-                success: true,
-                result: {
-                  format: "aria",
-                  elements: snapshot,
-                  url: page.url(),
-                  title: pageTitle,
-                  elementCount: snapshot.length,
-                  interactiveCount: snapshot.filter(e => ["button", "input", "select", "textarea", "a"].includes(e.role)).length,
-                  size: {
-                    bytes: smallSnapshotSize,
-                    kb: parseFloat((smallSnapshotSize / 1024).toFixed(2)),
-                  },
-                  viewport: viewport,
-                },
-              };
-            } else {
-              // AI snapshot - extract meaningful content (like OpenClaw)
-              // Pass function string directly to page.evaluate() with options embedded
-              const optionsJson = JSON.stringify({
-                selector: snapshotSelector,
-                interactiveOnly,
-                maxChars,
-              });
-              const snapshot = await page.evaluate(
-                `(${extractSnapshotCode.trim()})(${optionsJson})`
-              ) as SnapshotResult | SnapshotError;
-
-              if ("error" in snapshot) {
-                return {
-                  success: false,
-                  error: snapshot.error,
-                };
-              }
-
-              // Save snapshot to file instead of returning full content (prevents context overflow)
-              const workspaceDir = getAgentWorkspaceDir(securityContext!.agentId);
-              const snapshotsDir = join(workspaceDir, "snapshots");
-              if (!existsSync(snapshotsDir)) {
-                mkdirSync(snapshotsDir, { recursive: true });
-              }
-
-              const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-              const urlSlug = page.url().replace(/[^a-zA-Z0-9]/g, "-").substring(0, 50);
-              const filename = `snapshot-${timestamp}-${urlSlug}.txt`;
-              const snapshotPath = join(snapshotsDir, filename);
-
-              // Save full snapshot content to file
-              const pageTitle = await page.title();
-              const viewport = page.viewportSize();
-              const snapshotLines = snapshot.snapshot.split("\n");
-              const snapshotCharCount = snapshot.snapshot.length;
-              const elementsJson = JSON.stringify(snapshot.elements, null, 2);
-              const elementsCharCount = elementsJson.length;
-              const totalCharCount = snapshotCharCount + elementsCharCount;
-
-              const snapshotContent = `# Browser Snapshot
-URL: ${page.url()}
-Title: ${pageTitle}
-Timestamp: ${new Date().toISOString()}
-Viewport: ${viewport ? `${viewport.width}x${viewport.height}` : "unknown"}
-
-## Statistics
-- Total Elements: ${snapshot.stats.total}
-- Interactive Elements: ${snapshot.stats.interactive}
-- Snapshot Lines: ${snapshotLines.length}
-- Snapshot Characters: ${snapshotCharCount.toLocaleString()}
-- Elements JSON Characters: ${elementsCharCount.toLocaleString()}
-- Total Content Size: ${totalCharCount.toLocaleString()} characters
-
-## Snapshot Content
-
-${snapshot.snapshot}
-
-## Elements Data (JSON)
-
-${elementsJson}
-`;
-
-              writeFileSync(snapshotPath, snapshotContent, "utf-8");
-
-              // Get actual file size after writing
-              const stats = statSync(snapshotPath);
-              const fileSizeBytes = stats.size;
-              const fileSizeKB = (fileSizeBytes / 1024).toFixed(2);
-              const fileSizeMB = (fileSizeBytes / (1024 * 1024)).toFixed(4);
-
-              // Return file path with summary stats (not full content)
-              const previewLines = snapshotLines.slice(0, 10);
-              const preview = previewLines.join("\n") + (snapshotLines.length > 10 ? `\n... (${snapshotLines.length - 10} more lines)` : "");
-
-              return {
-                success: true,
-                result: {
-                  format: "ai",
-                  path: snapshotPath,
-                  url: page.url(),
-                  title: pageTitle,
-                  stats: {
-                    ...snapshot.stats,
-                    lines: snapshotLines.length,
-                    characters: totalCharCount,
-                  },
-                  fileSize: {
-                    bytes: fileSizeBytes,
-                    kb: parseFloat(fileSizeKB),
-                    mb: parseFloat(fileSizeMB),
-                  },
-                  viewport: viewport,
-                  preview: preview,
-                  message: `Snapshot saved to file (${snapshot.stats.total} elements, ${snapshotLines.length} lines, ${fileSizeKB} KB). Use terminal/file tools to read/search: ${snapshotPath}`,
-                },
-              };
-            }
+            return {
+              success: true,
+              result: {
+                format: options.format,
+                path,
+                url: page.url(),
+                title: await page.title().catch(() => ""),
+                stats: result.stats,
+                refs: result.refs,
+                fileSize: { bytes: stats.size, kb: (stats.size / 1024).toFixed(2) },
+                preview,
+                message: `Snapshot saved to: ${path}`,
+              },
+            };
           }
 
           case "screenshot": {
             const fullPage = params.fullPage === true;
-            const screenshot = await page.screenshot({
-              fullPage,
-              type: "png",
-            });
+            const ref = params.ref as string | undefined;
+            const savePath = params.savePath as string | undefined;
 
-            // Determine save path
-            let savePath: string;
-            if (typeof params.savePath === "string" && params.savePath) {
-              // Expand ~ in user-provided path
-              savePath = params.savePath;
+            let buffer: Buffer;
+            if (ref) {
+              const { resolveElement } = await import("./utils.js");
+              const { locator } = await resolveElement(page, ref);
+              buffer = await locator.screenshot({ type: "png" });
             } else {
-              // Default: save to workspace/screenshots/
-              const workspaceDir = getAgentWorkspaceDir(securityContext!.agentId);
-              const screenshotsDir = getWorkspaceScreenshotsDir(workspaceDir);
-              if (!existsSync(screenshotsDir)) {
-                mkdirSync(screenshotsDir, { recursive: true });
-              }
-              const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-              const urlSlug = page.url().replace(/[^a-zA-Z0-9]/g, "-").substring(0, 50);
-              const filename = `screenshot-${timestamp}-${urlSlug}.png`;
-              savePath = getWorkspaceScreenshotPath(workspaceDir, filename);
+              buffer = await page.screenshot({ fullPage, type: "png" });
             }
 
-            // Ensure directory exists
-            const dir = dirname(savePath);
+            const workspaceDir = getAgentWorkspaceDir(agentId);
+            const screenshotsDir = getWorkspaceScreenshotsDir(workspaceDir);
+            if (!existsSync(screenshotsDir)) {
+              mkdirSync(screenshotsDir, { recursive: true });
+            }
+
+            const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+            const urlSlug = page.url().replace(/[^a-zA-Z0-9]/g, "-").substring(0, 50);
+            const filename = `screenshot-${timestamp}-${urlSlug}.png`;
+            const finalPath = savePath || getWorkspaceScreenshotPath(workspaceDir, filename);
+
+            const dir = dirname(finalPath);
             if (!existsSync(dir)) {
               mkdirSync(dir, { recursive: true });
             }
 
-            // Save screenshot to file
-            writeFileSync(savePath, screenshot);
+            writeFileSync(finalPath, buffer);
+
+            return {
+              success: true,
+              result: { path: finalPath, url: page.url(), fullPage },
+            };
+          }
+
+          case "tabs": {
+            const tabAction = params.tabAction as string | undefined;
+            const targetId = params.targetId as string | undefined;
+            const url = params.url as string | undefined;
+
+            if (!tabAction || tabAction === "list") {
+              const tabs = await browserManager.listTabs();
+              return {
+                success: true,
+                result: {
+                  tabs: tabs.map((t) => ({
+                    targetId: t.targetId,
+                    url: t.url,
+                    title: t.title,
+                  })),
+                },
+              };
+            }
+
+            if (tabAction === "open") {
+              if (!url) {
+                return { success: false, error: "url is required to open tab" };
+              }
+              const tab = await browserManager.createTab(url);
+              return {
+                success: true,
+                result: {
+                  targetId: tab.targetId,
+                  url: tab.url,
+                  title: tab.title,
+                },
+              };
+            }
+
+            if (tabAction === "focus") {
+              if (!targetId) {
+                return { success: false, error: "targetId is required to focus tab" };
+              }
+              await browserManager.focusTab(targetId);
+              return { success: true, result: { targetId } };
+            }
+
+            if (tabAction === "close") {
+              if (!targetId) {
+                return { success: false, error: "targetId is required to close tab" };
+              }
+              await browserManager.closeTab(targetId);
+              return { success: true, result: { targetId } };
+            }
+
+            return { success: false, error: `Unknown tab action: ${tabAction}` };
+          }
+
+          case "act": {
+            const request = params.request as ActionRequest | undefined;
+            if (!request || !request.kind) {
+              const suggestions: string[] = [];
+              if (params.url) {
+                suggestions.push("Use action='navigate' with url parameter to navigate to a page");
+              }
+              if (params.interactive !== undefined) {
+                suggestions.push("Use action='snapshot' with interactive parameter to take a page snapshot");
+              }
+              const suggestionText = suggestions.length > 0 
+                ? `\n\nDid you mean to:\n${suggestions.map(s => `- ${s}`).join("\n")}`
+                : "";
+              return { 
+                success: false, 
+                error: `request object with kind is required for act action. The request must be an object with a 'kind' property (e.g., 'click', 'type', 'press', 'hover', 'scrollIntoView', 'drag', 'select', 'fill', 'resize', 'wait', 'evaluate').${suggestionText}\n\nExample: { action: "act", request: { kind: "click", ref: "e12" } }` 
+              };
+            }
+
+            const error = validateActionRequest(request);
+            if (error) {
+              return { success: false, error };
+            }
+
+            const actionResult = await executeAction(page, request);
+            const tab = await browserManager.getTab(params.targetId as string | undefined);
 
             return {
               success: true,
               result: {
-                path: savePath,
-                url: page.url(),
-                fullPage,
+                ...(typeof actionResult === "object" && actionResult !== null ? actionResult : { value: actionResult }),
+                targetId: tab.targetId,
+                url: tab.url,
               },
             };
           }
 
-          case "click": {
-            const selector = typeof params.selector === "string" ? params.selector : undefined;
-            if (!selector) {
-              return { success: false, error: "selector is required for click action" };
+          case "cookies": {
+            const cookie = params.cookie as any;
+            if (cookie) {
+              if (cookie.clear) {
+                await clearCookies(page);
+              } else {
+                await setCookie(page, cookie);
+              }
+              return { success: true, result: { ok: true } };
             }
-            await page.click(selector);
-            return {
-              success: true,
-              result: {
-                action: "clicked",
-                selector,
-                url: page.url(),
-              },
-            };
+            const cookies = await getCookies(page);
+            return { success: true, result: { cookies } };
           }
 
-          case "type": {
-            const selector = typeof params.selector === "string" ? params.selector : undefined;
-            const text = typeof params.text === "string" ? params.text : undefined;
-            if (!selector || !text) {
-              return { success: false, error: "selector and text are required for type action" };
+          case "storage": {
+            const kind = (params.storageKind as "local" | "session") || "local";
+            const key = params.key as string | undefined;
+            const value = params.value as string | undefined;
+
+            if (value !== undefined) {
+              if (!key) {
+                return { success: false, error: "key is required to set storage" };
+              }
+              await setStorage(page, kind, key, value);
+              return { success: true, result: { ok: true } };
             }
-            // Wait for element to be visible and ready
-            await page.waitForSelector(selector, { state: "visible", timeout: 10000 });
-            // Focus the element first
-            await page.focus(selector);
-            // Clear existing content and type new text
-            await page.fill(selector, text);
-            return {
-              success: true,
-              result: {
-                action: "typed",
-                selector,
-                text,
-                url: page.url(),
-              },
-            };
+
+            if (key === "clear") {
+              await clearStorage(page, kind);
+              return { success: true, result: { ok: true } };
+            }
+
+            const storage = await getStorage(page, kind, key);
+            return { success: true, result: { [kind]: storage } };
           }
 
-          case "evaluate": {
-            const code = typeof params.code === "string" ? params.code : undefined;
-            if (!code) {
-              return { success: false, error: "code is required for evaluate action" };
+          case "emulation": {
+            if (params.offline !== undefined) {
+              await setOffline(page, params.offline as boolean);
             }
-            const result = await page.evaluate(code);
-            return {
-              success: true,
-              result: {
-                value: result,
-                url: page.url(),
-              },
-            };
+            if (params.headers) {
+              await setExtraHeaders(page, params.headers as Record<string, string>);
+            }
+            if (params.credentials) {
+              await setHttpCredentials(page, params.credentials as any);
+            }
+            if (params.geolocation) {
+              await setGeolocation(page, params.geolocation as any);
+            }
+            if (params.media) {
+              await emulateMedia(page, params.media as any);
+            }
+            if (params.timezoneId) {
+              await setTimezone(page, params.timezoneId as string);
+            }
+            if (params.locale) {
+              await setLocale(page, params.locale as string);
+            }
+            if (params.device) {
+              await emulateDevice(page, params.device as string);
+            }
+            return { success: true, result: { ok: true } };
+          }
+
+          case "debug": {
+            const debugType = params.debugType as string | undefined;
+            const level = params.level as string | undefined;
+            const filter = params.filter as string | undefined;
+            const clear = params.clear === true;
+
+            if (debugType === "console" || !debugType) {
+              const messages = getConsoleMessages(level);
+              return { success: true, result: { messages } };
+            }
+
+            if (debugType === "errors") {
+              const errors = getPageErrors(clear);
+              return { success: true, result: { errors } };
+            }
+
+            if (debugType === "requests") {
+              const requests = getNetworkRequests(filter, clear);
+              return { success: true, result: { requests } };
+            }
+
+            return { success: false, error: `Unknown debug type: ${debugType}. Use: console, errors, requests` };
+          }
+
+          case "files": {
+            const fileAction = params.fileAction as string | undefined;
+
+            if (fileAction === "upload" || params.paths) {
+              const paths = params.paths as string[];
+              if (!paths || paths.length === 0) {
+                return { success: false, error: "paths array required for upload" };
+              }
+              await handleFileUpload(
+                page,
+                paths,
+                params.ref as string | number | undefined,
+                params.selector as string | undefined,
+                params.timeoutMs as number | undefined,
+              );
+              return { success: true, result: { ok: true } };
+            }
+
+            if (fileAction === "dialog" || params.accept !== undefined) {
+              await handleDialog(
+                page,
+                params.accept as boolean,
+                params.promptText as string | undefined,
+                params.timeoutMs as number | undefined,
+              );
+              return { success: true, result: { ok: true } };
+            }
+
+            if (fileAction === "download") {
+              if (!params.ref && !params.selector) {
+                return { success: false, error: "ref or selector required for download" };
+              }
+              if (!params.savePath) {
+                return { success: false, error: "savePath required for download" };
+              }
+              const result = await downloadFile(
+                page,
+                params.ref as string | number,
+                params.selector as string,
+                params.savePath as string,
+                params.timeoutMs as number | undefined,
+              );
+              return { success: true, result };
+            }
+
+            if (fileAction === "wait-download") {
+              const result = await waitForDownload(
+                page,
+                params.savePath as string | undefined,
+                params.timeoutMs as number | undefined,
+              );
+              return { success: true, result };
+            }
+
+            if (fileAction === "response-body") {
+              if (!params.url) {
+                return { success: false, error: "url required for response-body" };
+              }
+              const result = await getResponseBody(
+                page,
+                params.url as string,
+                params.timeoutMs as number | undefined,
+              );
+              return { success: true, result };
+            }
+
+            if (fileAction === "highlight") {
+              if (!params.ref && !params.selector) {
+                return { success: false, error: "ref or selector required for highlight" };
+              }
+              await highlightElement(
+                page,
+                params.ref as string | number,
+                params.selector as string | undefined,
+              );
+              return { success: true, result: { ok: true } };
+            }
+
+            return { success: false, error: `Unknown file action: ${fileAction}. Use: upload, dialog, download, wait-download, response-body, highlight` };
           }
 
           default:
             return {
               success: false,
-              error: `Unknown action: ${action}. Supported: navigate, snapshot, screenshot, click, type, evaluate, close`,
+              error: `Unknown action: ${action}. Supported: navigate, snapshot, screenshot, tabs, act, cookies, storage, emulation, debug, files, status, start, stop, close`,
             };
         }
       } catch (err) {
@@ -583,3 +533,5 @@ ${elementsJson}
     },
   };
 }
+
+import { statSync } from "node:fs";
