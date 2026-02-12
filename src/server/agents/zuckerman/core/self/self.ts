@@ -4,7 +4,7 @@ import { loadConfig } from "@server/world/config/index.js";
 import { resolveAgentHomedir } from "@server/world/homedir/resolver.js";
 import { UnifiedMemoryManager } from "@server/agents/zuckerman/core/memory/manager.js";
 import { resolveMemorySearchConfig } from "@server/agents/zuckerman/core/memory/config.js";
-import type { AgentEvent } from "./events.js";
+import type { AgentEvent, MessageEvent } from "./events.js";
 import { streamText, generateText, Output } from "ai";
 import type { Tool, LanguageModel, ModelMessage } from "ai";
 import { z } from "zod";
@@ -13,7 +13,7 @@ import { ToolRegistry } from "@server/agents/zuckerman/tools/registry.js";
 import { IdentityLoader } from "../identity/identity-loader.js";
 import { agentDiscovery } from "@server/agents/discovery.js";
 import { ToolExecutor } from "./tool-executor.js";
-import { SYSTEM2_BRAIN_PARTS, getBrainPart, selfCouncilPrompt, getCommonContext } from "./system2-brain-parts.js";
+import { SYSTEM2_BRAIN_PARTS, getBrainPart, selfCouncilPrompt } from "./system2-brain-parts.js";
 import type { BrainPart } from "./types.js";
 
 export type EventHandler<T extends AgentEvent = AgentEvent> = (event: T) => void | Promise<void>;
@@ -28,131 +28,214 @@ export class Self {
   private llmModel!: LanguageModel;
   private availableTools!: Record<string, Tool>;
   private systemPrompt!: string;
+  private isRunning = false;
+  private coreInitialized = false;
+  private processingPromise: Promise<void> | null = null;
 
   constructor(agentId: string) {
     this.agentId = agentId;
     this.toolExecutor = new ToolExecutor((event) => this.emit(event));
+
+    // Register handler for incoming message events
+    this.on("message", async (event: MessageEvent) => {
+      const { message } = event;
+
+      console.log(`[Self] Received message event`);
+
+      // Get current working memory
+      const workingMemory = this.getWorkingMemory();
+      console.log(`[Self] Current working memory size: ${workingMemory.length}`);
+
+      // Add message to working memory
+      workingMemory.push(`new message from user: ${message}`);
+      console.log(`[Self] Added message to working memory: ${message.substring(0, 50)}...`);
+
+      // Save updated working memory
+      this.setWorkingMemory(workingMemory);
+      await this.memoryManager.onNewMessage(message);
+
+      console.log(`[Self] Message processed, working memory size: ${workingMemory.length}`);
+    });
   }
 
   async initialize(): Promise<void> {
+    console.log(`[Self] Initializing agent ${this.agentId}`);
     const config = await loadConfig();
     const homedir = resolveAgentHomedir(config, this.agentId);
     this.memoryManager = UnifiedMemoryManager.create(homedir, this.agentId);
+    console.log(`[Self] Memory manager created`);
 
     const memorySearchConfig = config.agent?.memorySearch;
     if (memorySearchConfig) {
       const resolvedConfig = resolveMemorySearchConfig(memorySearchConfig, homedir, this.agentId);
       if (resolvedConfig) {
+        console.log(`[Self] Initializing memory database...`);
         await this.memoryManager.initializeDatabase(resolvedConfig, this.agentId);
+        console.log(`[Self] Memory database initialized`);
       }
     }
   }
 
-  async run(params: AgentRunParams): Promise<AgentRunResult> {
-    const { conversationId, message, runId = randomUUID() } = params;
-
-    console.log(`[Self] Starting run ${runId} for conversation ${conversationId}`);
-    
-    await this.initializeCore(conversationId);
-    
-    await this.emit({
-      type: "stream.lifecycle",
-      conversationId,
-      runId,
-      phase: "start",
-      message,
-    });
-
-    const workingMemory: string[] = [`new message from user: ${message}`];
-    
-    const memoryResult = await this.memoryManager.getRelevantMemories(message, {
-      limit: 20,
-      types: ["semantic", "episodic", "procedural"],
-    });
-    for (const m of memoryResult.memories) {
-      if (m.type === "semantic") {
-        workingMemory.push((m as any).fact);
-      } else if (m.type === "episodic") {
-        workingMemory.push((m as any).event);
-      } else if (m.type === "procedural") {
-        workingMemory.push(`${(m as any).pattern}: ${(m as any).action}`);
-      }
+  /**
+   * Start the autonomous background processing loop
+   * This runs 24/7 and processes working memory
+   */
+  async start(): Promise<void> {
+    if (this.isRunning) {
+      return;
     }
 
-    this.memoryManager.setWorkingMemory(conversationId, JSON.stringify(workingMemory));
+    this.isRunning = true;
+    console.log(`[Self] Starting autonomous processing loop for agent ${this.agentId}`);
 
-    let tokensUsed = 0;
-    let response = "";
+    // Start background processing loop
+    this.processingPromise = this.processLoop();
+  }
 
-    while (true) {
-      const action = await this.decideAction(conversationId);
-      
-      if (action === "respond") {
-        response = await this.generateResponse(conversationId, runId);
-        const usage = await this.getLastUsage();
-        tokensUsed = usage?.totalTokens ?? tokensUsed;
-        
-        await this.emit({ 
-          type: "write", 
-          conversationId, 
-          content: response, 
-          role: "assistant", 
-          runId 
-        });
-        
-        await this.saveToMemory(conversationId, response);
-        break;
-      }
-      
-      if (action === "sleep") {
-        await new Promise(resolve => setTimeout(resolve, Math.random() * 4000 + 1000));
-        continue;
-      }
-      
-      if (action === "think") {
-        const brainPart = await this.selectBrainPart(conversationId);
-        if (!brainPart) {
-          response = await this.generateResponse(conversationId, runId);
-          const usage = await this.getLastUsage();
-          tokensUsed = usage?.totalTokens ?? tokensUsed;
-          
-          await this.emit({ 
-            type: "write", 
-            conversationId, 
-            content: response, 
-            role: "assistant", 
-            runId 
-          });
-          break;
+  /**
+   * Stop the autonomous background processing loop
+   */
+  async stop(): Promise<void> {
+    this.isRunning = false;
+    if (this.processingPromise) {
+      await this.processingPromise;
+    }
+  }
+
+  /**
+   * Background processing loop that runs continuously on working memory
+   */
+  private async processLoop(): Promise<void> {
+    console.log(`[Self] Process loop started`);
+    while (this.isRunning) {
+      try {
+        // Ensure core is initialized
+        if (!this.coreInitialized) {
+          console.log(`[Self] Initializing core...`);
+          await this.initializeCore();
+          this.coreInitialized = true;
+          console.log(`[Self] Core initialized`);
         }
-        
-        const result = await this.runBrainPart(brainPart, conversationId, runId);
-        await this.saveToMemory(conversationId, result);
+
+        // Always process working memory
+        try {
+          await this.selfCouncil();
+        } catch (error) {
+          console.error(`[Self] Error processing working memory:`, error);
+        }
+
+        // Small delay between iterations
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (error) {
+        console.error(`[Self] Error in processing loop:`, error);
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
-
-    await this.emit({ 
-      type: "stream.lifecycle", 
-      conversationId, 
-      runId, 
-      phase: "end", 
-      tokensUsed 
-    });
-    
-    return { runId, response, tokensUsed };
+    console.log(`[Self] Process loop stopped`);
   }
 
-  private getWorkingMemory(conversationId: string): string[] {
-    const wm = this.memoryManager.getWorkingMemory(conversationId);
+  /**
+   * Process working memory
+   */
+  private async selfCouncil(): Promise<void> {
+    const workingMemory = this.getWorkingMemory();
+
+    // Skip if no working memory
+    if (workingMemory.length === 0) {
+      console.log(`[Self] Self council skipped - no working memory`);
+      return;
+    }
+
+    console.log(`[Self] Self council started, working memory size: ${workingMemory.length}`);
+    const runId = randomUUID();
+    const action = await this.decideAction();
+    console.log(`[Self] Decided action: ${action} (runId: ${runId})`);
+
+    if (action === "think") {
+      const brainPart = await this.selectBrainPart();
+      if (brainPart) {
+        console.log(`[Self] Selected brain part: ${brainPart.name}`);
+        const result = await this.runBrainPart(brainPart, runId);
+        await this.saveToMemory(result);
+        console.log(`[Self] Brain part completed, saved to memory`);
+      } else {
+        console.log(`[Self] No brain part selected`);
+      }
+    } else if (action === "respond") {
+      console.log(`[Self] Generating response...`);
+      const response = await this.generateResponse(runId);
+      console.log(`[Self] Response generated (length: ${response.length})`);
+
+      await this.emit({
+        type: "write",
+        conversationId: "",
+        content: response,
+        role: "assistant",
+        runId
+      });
+
+    } else if (action === "sleep") {
+      // Sleep - do nothing, just wait
+      const sleepTime = Math.random() * 4000 + 1000;
+      console.log(`[Self] Sleeping for ${Math.round(sleepTime)}ms`);
+      await new Promise(resolve => setTimeout(resolve, sleepTime));
+    }
+  }
+
+  /**
+   * Emit a message event (event-driven, non-blocking)
+   */
+  async run(params: AgentRunParams): Promise<AgentRunResult> {
+    const runId = params.runId || randomUUID();
+    console.log(`[Self] Run called (runId: ${runId}, conversationId: ${params.conversationId})`);
+
+    // Emit message event - handler will process it
+    await this.emit({
+      type: "message",
+      conversationId: params.conversationId,
+      message: params.message,
+      runId,
+    });
+
+    // Return immediately (non-blocking)
+    return { runId, response: "", tokensUsed: 0 };
+  }
+
+  // ============================================================================
+  // Memory Management
+  // ============================================================================
+
+  private getWorkingMemory(): string[] {
+    const wm = this.memoryManager.getWorkingMemory();
     return wm ? JSON.parse(wm.content) as string[] : [];
   }
 
-  private setWorkingMemory(conversationId: string, workingMemory: string[]): void {
-    this.memoryManager.setWorkingMemory(conversationId, JSON.stringify(workingMemory));
+  private setWorkingMemory(workingMemory: string[]): void {
+    this.memoryManager.setWorkingMemory(JSON.stringify(workingMemory));
   }
 
-  private async decideAction(conversationId: string): Promise<Action> {
-    const workingMemory = this.getWorkingMemory(conversationId);
+  private async saveToMemory(content: string): Promise<void> {
+    const workingMemory = this.getWorkingMemory();
+    workingMemory.push(content);
+    console.log(`[Self] Saving to memory (content length: ${content.length}), working memory size: ${workingMemory.length}`);
+
+    if (workingMemory.length > 50) {
+      const removed = workingMemory.length - 50;
+      workingMemory.splice(0, workingMemory.length - 50);
+      console.log(`[Self] Trimmed ${removed} items from working memory (max 50)`);
+    }
+
+    this.setWorkingMemory(workingMemory);
+    await this.memoryManager.onNewMessage(content);
+  }
+
+  // ============================================================================
+  // Decision & Processing
+  // ============================================================================
+
+  private async decideAction(): Promise<Action> {
+    const workingMemory = this.getWorkingMemory();
+    console.log(`[Self] Deciding action with ${workingMemory.length} working memory items`);
     const prompt = selfCouncilPrompt(workingMemory);
 
     const selfCouncilSchema = z.object({
@@ -170,22 +253,22 @@ export class Self {
     });
 
     const output = result.output;
-    
+
     if (output.memories.length > 0) {
-      this.setWorkingMemory(conversationId, output.memories);
+      console.log(`[Self] Updating working memory (${output.memories.length} items)`);
+      this.setWorkingMemory(output.memories);
     }
-    
+
     return output.action;
   }
 
-  private async selectBrainPart(conversationId: string): Promise<BrainPart | null> {
-    const workingMemory = this.getWorkingMemory(conversationId);
+  private async selectBrainPart(): Promise<BrainPart | null> {
+    const workingMemory = this.getWorkingMemory();
+    console.log(`[Self] Selecting brain part from ${SYSTEM2_BRAIN_PARTS.length} available parts`);
     const brainPartList = SYSTEM2_BRAIN_PARTS.map(bp => `- ${bp.id}: ${bp.name}`).join("\n");
     const workingMemoryText = workingMemory.map((m, i) => `${i + 1}. ${m}`).join("\n");
-    
-    const prompt = `${getCommonContext()}
 
-You ARE Zuckerman. You are Self - selecting which brain part to use next.
+    const prompt = `You ARE Zuckerman. You are Self - selecting which brain part to use next.
 
 Working memory:
 ${workingMemoryText}
@@ -209,28 +292,31 @@ Which brain part should be used next?`;
     });
 
     const selectedId = result.output.brainPartId.trim().toLowerCase();
-    return getBrainPart(selectedId) ?? null;
+    const brainPart = getBrainPart(selectedId) ?? null;
+    console.log(`[Self] Selected brain part ID: ${selectedId}, found: ${brainPart ? brainPart.name : 'null'}`);
+    return brainPart;
   }
 
   private async runBrainPart(
     brainPart: BrainPart,
-    conversationId: string,
     runId: string
   ): Promise<string> {
-    console.log(`[Self] Running brain part: ${brainPart.name}`);
-    
-    const workingMemory = this.getWorkingMemory(conversationId);
+    console.log(`[Self] Running brain part: ${brainPart.name} (runId: ${runId})`);
+
+    const workingMemory = this.getWorkingMemory();
     const prompt = brainPart.getPrompt(workingMemory);
-    
+
     const initialUserMessage: ModelMessage = { role: "user" as const, content: prompt };
     const tools = brainPart.toolsAllowed !== false ? this.availableTools : undefined;
     const maxIterations = brainPart.maxIterations ?? 10;
-    
+    console.log(`[Self] Brain part config - maxIterations: ${maxIterations}, toolsAllowed: ${brainPart.toolsAllowed !== false}`);
+
     let iterations = 0;
     let messagesHistory: ModelMessage[] = [initialUserMessage];
     let finalContent = "";
-    
+
     while (iterations < maxIterations) {
+      console.log(`[Self] Brain part iteration ${iterations + 1}/${maxIterations}`);
       const streamResult = await streamText({
         model: this.llmModel,
         system: this.systemPrompt,
@@ -243,24 +329,22 @@ Which brain part should be used next?`;
         content += chunk;
         await this.emit({
           type: "stream.token",
-          conversationId,
+          conversationId: "",
           runId,
           token: chunk,
         });
       }
 
-      const usage = await streamResult.usage;
-      this.lastUsage = usage ?? null;
-
       const toolCalls = await streamResult.toolCalls;
-      
+
       if (toolCalls?.length) {
+        console.log(`[Self] Executing ${toolCalls.length} tool call(s)`);
         const { assistantMsg, toolResultMsgs } = await this.toolExecutor.executeToolCalls(
           toolCalls,
           content,
           this.availableTools,
           messagesHistory,
-          conversationId,
+          "",
           runId
         );
         messagesHistory.push(assistantMsg, ...toolResultMsgs);
@@ -271,17 +355,23 @@ Which brain part should be used next?`;
       if (content.trim().length > 0) {
         messagesHistory.push({ role: "assistant" as const, content });
         finalContent = content;
+        console.log(`[Self] Brain part completed with content (length: ${content.length})`);
         break;
       }
-      
+
       iterations++;
+    }
+
+    if (iterations >= maxIterations) {
+      console.log(`[Self] Brain part reached max iterations (${maxIterations})`);
     }
 
     return finalContent;
   }
 
-  private async generateResponse(conversationId: string, runId: string): Promise<string> {
-    const workingMemory = this.getWorkingMemory(conversationId);
+  private async generateResponse(runId: string): Promise<string> {
+    const workingMemory = this.getWorkingMemory();
+    console.log(`[Self] Generating response (runId: ${runId}), working memory size: ${workingMemory.length}`);
     const workingMemoryText = workingMemory.length > 0
       ? `\n\n## Working Memory\n${workingMemory.map((m, i) => `${i + 1}. ${m}`).join("\n")}`
       : "";
@@ -303,63 +393,54 @@ Which brain part should be used next?`;
       content += chunk;
       await this.emit({
         type: "stream.token",
-        conversationId,
+        conversationId: "",
         runId,
         token: chunk,
       });
     }
 
-    const usage = await streamResult.usage;
-    this.lastUsage = usage ?? null;
-
     const toolCalls = await streamResult.toolCalls;
     if (toolCalls?.length) {
+      console.log(`[Self] Response generation executing ${toolCalls.length} tool call(s)`);
       const { assistantMsg, toolResultMsgs } = await this.toolExecutor.executeToolCalls(
         toolCalls,
         content,
         this.availableTools,
         messages,
-        conversationId,
+        "",
         runId
       );
-      const toolResults = toolResultMsgs.map(m => 
+      const toolResults = toolResultMsgs.map(m =>
         typeof m.content === "string" ? m.content : JSON.stringify(m.content)
       ).join("\n");
       content = content + (content ? "\n\n" : "") + toolResults;
     }
 
+    console.log(`[Self] Response generated (length: ${content.length})`);
     return content;
   }
 
-  private async saveToMemory(conversationId: string, content: string): Promise<void> {
-    const workingMemory = this.getWorkingMemory(conversationId);
-    workingMemory.push(content);
-    
-    if (workingMemory.length > 50) {
-      workingMemory.splice(0, workingMemory.length - 50);
-    }
-    
-    this.setWorkingMemory(conversationId, workingMemory);
-    await this.memoryManager.onNewMessage(content, conversationId);
-  }
+  // ============================================================================
+  // Initialization
+  // ============================================================================
 
-  private lastUsage: { totalTokens?: number } | null = null;
-
-  private async getLastUsage(): Promise<{ totalTokens?: number } | null> {
-    return this.lastUsage;
-  }
-
-  private async initializeCore(conversationId: string): Promise<void> {
+  private async initializeCore(): Promise<void> {
+    console.log(`[Self] Initializing core for agent ${this.agentId}`);
     const config = await loadConfig();
     const homedir = resolveAgentHomedir(config, this.agentId);
 
     const metadata = agentDiscovery.getMetadata(this.agentId)!;
     this.systemPrompt = await new IdentityLoader().getSystemPrompt(metadata.agentDir);
+    console.log(`[Self] System prompt loaded (length: ${this.systemPrompt.length})`);
+    
     this.llmModel = await LLMProvider.getInstance().fastCheap();
+    console.log(`[Self] LLM model initialized`);
 
     const toolRegistry = new ToolRegistry();
     this.availableTools = Object.fromEntries(toolRegistry.getToolsMap());
+    console.log(`[Self] Tools loaded: ${Object.keys(this.availableTools).length} available`);
   }
+
 
   /**
    * Register an event handler for a specific event type

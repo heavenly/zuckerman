@@ -161,6 +161,8 @@ export class AgentService implements AgentRuntime {
    */
   async initialize(): Promise<void> {
     await this.runtime.initialize();
+    // Start autonomous background processing loop
+    await this.runtime.start();
   }
 
   /**

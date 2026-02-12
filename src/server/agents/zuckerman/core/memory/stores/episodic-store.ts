@@ -178,6 +178,17 @@ export class EpisodicMemoryStore {
   }
 
   /**
+   * Delete episodic memory
+   */
+  delete(id: string): boolean {
+    const deleted = this.memories.delete(id);
+    if (deleted) {
+      this.save();
+    }
+    return deleted;
+  }
+
+  /**
    * Get all memories (for migration/backup)
    */
   getAll(): EpisodicMemory[] {

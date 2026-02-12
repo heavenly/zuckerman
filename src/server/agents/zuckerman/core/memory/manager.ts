@@ -131,99 +131,106 @@ export class UnifiedMemoryManager implements MemoryManager {
 
   // ========== Event-Driven Memory Methods ==========
 
-  /**
-   * Called when sleep mode ends
-   * Saves consolidated memories from sleep mode as structured episodic/semantic memories
-   */
-  onSleepEnded(
-    memories: Array<{
-      content: string;
-      type: "fact" | "preference" | "decision" | "event" | "learning";
-      importance: number;
-    }>,
-    conversationId?: string
-  ): void {
-    for (const memory of memories) {
-      // Always save as semantic memory (long-term)
-      this.addSemanticMemory({
-        fact: memory.content,
-        category: memory.type,
-        confidence: memory.importance,
-        source: conversationId,
-      });
+  onSleepEnded(keepIds: string[]): void {
+    const keep = new Set(keepIds);
+    for (const m of this.semanticMemory.getAll()) {
+      if (!keep.has(m.id)) this.semanticMemory.delete(m.id);
+    }
+    for (const m of this.episodicMemory.getAll()) {
+      if (!keep.has(m.id)) this.episodicMemory.delete(m.id);
+    }
+    for (const m of this.proceduralMemory.getAll()) {
+      if (!keep.has(m.id)) this.proceduralMemory.remove(m.id);
+    }
+    for (const m of this.prospectiveMemory.getAll()) {
+      if (!keep.has(m.id)) this.prospectiveMemory.delete(m.id);
     }
   }
 
-  /**
-   * Process a new user message and remember/save important memories
-   * This is called by the runtime when a new user message arrives
-   */
-  async onNewMessage(
-    userMessage: string,
-    conversationId?: string,
-    conversationContext?: string
-  ): Promise<void> {
+  async onNewMessage(userMessage: string, conversationContext?: string): Promise<void> {
     try {
-      const rememberResult = await rememberMemoriesFromMessage(
-        userMessage,
-        conversationContext
-      );
+      const result = await rememberMemoriesFromMessage(userMessage, conversationContext);
+      if (!result.hasImportantInfo || result.memories.length === 0) return;
 
-      if (rememberResult.hasImportantInfo && rememberResult.memories.length > 0) {
-        const now = Date.now();
-
-        for (const memory of rememberResult.memories) {
-          // Save to semantic memory (long-term): facts, preferences, learnings
-          if (memory.type === "fact" || memory.type === "preference" || memory.type === "learning") {
-            // Use structured data if available for better fact remembering
-            const fact = memory.structuredData
-              ? Object.entries(memory.structuredData)
-                .filter(([k]) => k !== "field")
-                .map(([k, v]) => `${k}: ${v}`)
-                .join(", ") || memory.content
-              : memory.content;
-
-            this.addSemanticMemory({
-              fact,
-              category: memory.type,
-              confidence: memory.importance,
-              source: conversationId,
-            });
-          }
-          // Save to episodic memory (time-bound): decisions, events
-          else if (memory.type === "decision" || memory.type === "event") {
-            this.addEpisodicMemory({
-              event: memory.type === "event" ? memory.content : `${memory.type}: ${memory.content}`,
+      const now = Date.now();
+      for (const m of result.memories) {
+        if (m.type === "semantic") {
+          this.addSemanticMemory({ fact: m.content, confidence: m.importance });
+        } else if (m.type === "episodic") {
+          this.addEpisodicMemory({
+            event: m.content,
+            timestamp: now,
+            context: { what: m.content, when: now, why: `Importance: ${m.importance.toFixed(2)}` },
+          });
+        } else if (m.type === "procedural") {
+          this.addProceduralMemory({
+            pattern: m.content,
+            trigger: m.content,
+            action: m.content,
+            successRate: m.importance,
+          });
+        } else if (m.type === "prospective") {
+          this.addProspectiveMemory({ intention: m.content, status: "pending", priority: m.importance });
+        } else if (m.type === "emotional") {
+          const semanticId = this.addSemanticMemory({ fact: m.content, confidence: m.importance });
+          this.addEmotionalMemory({
+            targetMemoryId: semanticId,
+            targetMemoryType: "semantic",
+            tag: {
+              emotion: "neutral",
+              intensity: m.importance > 0.7 ? "high" : m.importance > 0.5 ? "medium" : "low",
               timestamp: now,
-              context: {
-                what: memory.content,
-                when: now,
-                why: `Importance: ${memory.importance.toFixed(2)}, Type: ${memory.type}`,
-              },
-              conversationId,
-            });
-          }
+            },
+          });
         }
       }
-    } catch (rememberError) {
-      // Don't fail if remembering fails - just log and continue
-      console.warn(`[UnifiedMemoryManager] Memory remembering failed:`, rememberError);
+    } catch (err) {
+      console.warn(`[UnifiedMemoryManager] Memory remembering failed:`, err);
     }
   }
 
   /**
-   * Set working memory for a conversation
+   * Set working memory
    */
-  setWorkingMemory(conversationId: string, content: string): void {
-    this.workingMemory.set(conversationId, content);
+  setWorkingMemory(content: string): void {
+    this.workingMemory.set(content);
   }
 
   /**
-   * Get working memory for a conversation
+   * Get working memory
    */
-  getWorkingMemory(conversationId: string): { content: string } | null {
-    const wm = this.workingMemory.get(conversationId);
+  getWorkingMemory(): { content: string } | null {
+    const wm = this.workingMemory.get();
     return wm ? { content: wm.content } : null;
+  }
+
+  /**
+   * Get all memories for consolidation
+   */
+  getAllMemories(): Array<{ id: string; type: MemoryType; content: string }> {
+    const allMemories: Array<{ id: string; type: MemoryType; content: string }> = [];
+    
+    // Collect semantic memories
+    for (const m of this.semanticMemory.getAll()) {
+      allMemories.push({ id: m.id, type: "semantic", content: m.fact });
+    }
+    
+    // Collect episodic memories
+    for (const m of this.episodicMemory.getAll()) {
+      allMemories.push({ id: m.id, type: "episodic", content: m.event });
+    }
+    
+    // Collect procedural memories
+    for (const m of this.proceduralMemory.getAll()) {
+      allMemories.push({ id: m.id, type: "procedural", content: m.pattern });
+    }
+    
+    // Collect prospective memories
+    for (const m of this.prospectiveMemory.getAll()) {
+      allMemories.push({ id: m.id, type: "prospective", content: m.intention });
+    }
+    
+    return allMemories;
   }
 
   /**

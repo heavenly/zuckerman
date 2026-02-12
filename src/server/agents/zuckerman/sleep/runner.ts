@@ -1,22 +1,74 @@
-/**
- * Sleep mode runner - executes sleep mode processing
- */
-
 import type { ConversationManager } from "../conversations/manager.js";
 import { deriveConversationKey } from "../conversations/manager.js";
 import { loadConversationStore } from "../conversations/store.js";
 import type { ConversationEntry } from "../conversations/types.js";
 import type { ZuckermanConfig } from "@server/world/config/types.js";
-import { LLMProvider } from "@server/world/providers/llm/index.js";
-import { resolveSleepConfig } from "./config.js";
-import { shouldSleep } from "./trigger.js";
-import { processConversation } from "./processor.js";
-import { consolidateMemories } from "./consolidator.js";
 import { UnifiedMemoryManager } from "../core/memory/manager.js";
+import { generateText, Output } from "ai";
+import { z } from "zod";
+import { LLMProvider } from "@server/world/providers/llm/index.js";
 
-/**
- * Run sleep mode if needed
- */
+export interface SleepConfig {
+  enabled: boolean;
+  cooldownMinutes: number;
+  minMessagesToSleep: number;
+}
+
+const DEFAULT_COOLDOWN_MINUTES = 5;
+const DEFAULT_MIN_MESSAGES_TO_SLEEP = 10;
+
+function resolveSleepConfig(cfg?: {
+  sleep?: { enabled?: boolean; cooldownMinutes?: number; minMessagesToSleep?: number };
+  memoryFlush?: { enabled?: boolean };
+}): SleepConfig | null {
+  const sleepCfg = cfg?.sleep;
+  const memoryFlushCfg = cfg?.memoryFlush;
+  
+  if (sleepCfg?.enabled === false || (memoryFlushCfg?.enabled === false && !sleepCfg)) {
+    return null;
+  }
+  
+  const enabled = sleepCfg?.enabled ?? memoryFlushCfg?.enabled ?? true;
+  if (!enabled) return null;
+  
+  const normalizeInt = (v: unknown): number | null => {
+    if (typeof v !== "number" || !Number.isFinite(v)) return null;
+    const int = Math.floor(v);
+    return int >= 0 ? int : null;
+  };
+  
+  return {
+    enabled,
+    cooldownMinutes: normalizeInt(sleepCfg?.cooldownMinutes) ?? DEFAULT_COOLDOWN_MINUTES,
+    minMessagesToSleep: normalizeInt(sleepCfg?.minMessagesToSleep) ?? DEFAULT_MIN_MESSAGES_TO_SLEEP,
+  };
+}
+
+function shouldSleep(params: {
+  entry?: Pick<ConversationEntry, "totalTokens" | "sleepCount" | "sleepAt">;
+  config: SleepConfig;
+  conversationMessageCount?: number;
+}): boolean {
+  const totalTokens = params.entry?.totalTokens;
+  if (!totalTokens || totalTokens <= 0) return false;
+  
+  if (params.conversationMessageCount !== undefined) {
+    if (params.conversationMessageCount < params.config.minMessagesToSleep) {
+      return false;
+    }
+  }
+
+  const lastSleepAt = params.entry?.sleepAt;
+  if (lastSleepAt) {
+    const cooldownMs = params.config.cooldownMinutes * 60 * 1000;
+    if (Date.now() - lastSleepAt < cooldownMs) {
+      return false;
+    }
+  }
+  
+  return true;
+}
+
 export async function runSleepModeIfNeeded(params: {
   config: ZuckermanConfig;
   conversationManager: ConversationManager;
@@ -26,72 +78,53 @@ export async function runSleepModeIfNeeded(params: {
 }): Promise<ConversationEntry | undefined> {
   const { config, conversationManager, conversationId, agentId, homedir } = params;
 
-  // Resolve sleep settings
   const sleepConfig = resolveSleepConfig({
     sleep: config.agent?.sleep,
-    memoryFlush: config.agent?.memoryFlush, // Support migration from memoryFlush
+    memoryFlush: config.agent?.memoryFlush,
   });
 
-  if (!sleepConfig) {
-    return undefined; // Sleep disabled
-  }
+  if (!sleepConfig) return undefined;
 
-  // Get large context model for sleep processing (available for future LLM-based processing)
-  const llmManager = LLMProvider.getInstance(config);
-  const model = await llmManager.largeContext();
-
-  // Get conversation entry to check token counts
   const conversation = conversationManager.getConversation(conversationId);
-  if (!conversation) {
-    return undefined;
-  }
+  if (!conversation) return undefined;
 
   const conversationKey = deriveConversationKey(agentId, conversation.conversation.type, conversation.conversation.label);
   const storePath = conversationManager.getStorePath();
   const store = loadConversationStore(storePath);
   const entry = store[conversationKey];
 
-  // Check if sleep should run
-  const shouldRun = shouldSleep({
+  if (!shouldSleep({
     entry,
     config: sleepConfig,
     conversationMessageCount: conversation.messages?.length,
-  });
-
-  if (!shouldRun) {
+  })) {
     return entry;
   }
 
-  // Run sleep mode
   try {
-    // Phase 1: Process conversation
-    // Get recent messages for processing
-    const recentMessages = conversation.messages?.slice(-50) || []; // Last 50 messages
+    const memoryManager = UnifiedMemoryManager.create(homedir, agentId);
+    const allMemories = memoryManager.getAllMemories();
     
-    // Convert to ContextMessage format
-    const contextMessages = recentMessages.map((msg, idx) => ({
-      role: msg.role as "user" | "assistant" | "system" | "tool",
-      content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
-      timestamp: msg.timestamp || Date.now() - (recentMessages.length - idx) * 1000,
-      tokens: Math.ceil((typeof msg.content === "string" ? msg.content.length : JSON.stringify(msg.content).length) / 4),
-    }));
+    if (allMemories.length > 0) {
+      const model = await LLMProvider.getInstance().fastCheap();
+      const memoryList = allMemories.map(m => `- [${m.id}] ${m.type}: ${m.content}`).join("\n");
+      
+      const response = await generateText({
+        model,
+        system: `Review all memories and determine which ones are still relevant and should be kept. Remove outdated, redundant, or irrelevant memories. Return only the IDs of memories to keep.`,
+        messages: [
+          { role: "user" as const, content: `Memories:\n${memoryList}\n\nWhich memory IDs should be kept?` },
+        ],
+        output: Output.object({ schema: z.object({ keepIds: z.array(z.string()) }) }),
+        temperature: 0.3,
+      });
+      
+      memoryManager.onSleepEnded(response.output.keepIds);
+    }
 
-    const { importantMessages, summary } = processConversation(contextMessages);
-
-    // Phase 2 & 3: Consolidate memories
-    const consolidatedMemories = consolidateMemories(importantMessages, summary);
-
-    // Phase 4: Save using UnifiedMemoryManager (creates structured memories + file persistence)
-    const memoryManager = UnifiedMemoryManager.create(homedir);
-    
-    // Save consolidated memories (creates episodic/semantic memories automatically)
-    memoryManager.onSleepEnded(consolidatedMemories, conversationId);
-
-    // Update conversation entry with sleep metadata
     const updatedEntry = await conversationManager.updateConversationEntry(conversationId, (current) => ({
       sleepCount: (current.sleepCount ?? 0) + 1,
       sleepAt: Date.now(),
-      // Keep memoryFlushCount for backward compatibility during migration
       memoryFlushCount: (current.memoryFlushCount ?? 0) + 1,
       memoryFlushAt: Date.now(),
     }));

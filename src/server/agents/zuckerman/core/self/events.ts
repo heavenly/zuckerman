@@ -75,7 +75,15 @@ export interface StreamToolResultEvent {
   toolResult: unknown;
 }
 
+export interface MessageEvent {
+  type: "message";
+  conversationId: string;
+  message: string;
+  runId?: string;
+}
+
 export type AgentEvent =
+  | MessageEvent
   | SpeakEvent
   | WriteEvent
   | ThinkEvent

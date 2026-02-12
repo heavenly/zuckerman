@@ -135,7 +135,6 @@ export interface MemoryManager {
    */
   onNewMessage(
     userMessage: string,
-    conversationId?: string,
     conversationContext?: string
   ): Promise<void>;
 
@@ -153,14 +152,7 @@ export interface MemoryManager {
 
   /**
    * Called when sleep mode ends
-   * Saves consolidated memories from sleep mode as structured episodic/semantic memories
+   * Replaces all memories - keeps only the specified memory IDs
    */
-  onSleepEnded(
-    memories: Array<{
-      content: string;
-      type: "fact" | "preference" | "decision" | "event" | "learning";
-      importance: number;
-    }>,
-    conversationId?: string
-  ): void;
+  onSleepEnded(keepIds: string[]): void;
 }

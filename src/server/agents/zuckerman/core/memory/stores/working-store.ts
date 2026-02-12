@@ -7,13 +7,13 @@ import { randomUUID } from "node:crypto";
 import type { WorkingMemory } from "../types.js";
 
 export class WorkingMemoryStore {
-  private memories = new Map<string, WorkingMemory>();
+  private memory: WorkingMemory | null = null;
   private readonly defaultTtl = 60 * 60 * 1000; // 1 hour default TTL
 
   /**
-   * Set working memory for a conversation
+   * Set working memory
    */
-  set(conversationId: string, content: string, context?: Record<string, unknown>, ttl?: number): void {
+  set(content: string, context?: Record<string, unknown>, ttl?: number): void {
     const expiresAt = Date.now() + (ttl ?? this.defaultTtl);
     
     const memory: WorkingMemory = {
@@ -21,63 +21,55 @@ export class WorkingMemoryStore {
       type: "working",
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      conversationId,
       content,
       context: context ?? {},
       expiresAt,
     };
 
-    this.memories.set(conversationId, memory);
+    this.memory = memory;
   }
 
   /**
-   * Get working memory for a conversation
+   * Get working memory
    */
-  get(conversationId: string): WorkingMemory | null {
-    const memory = this.memories.get(conversationId);
-    if (!memory) return null;
+  get(): WorkingMemory | null {
+    if (!this.memory) return null;
     
     // Check if expired
-    if (memory.expiresAt && memory.expiresAt < Date.now()) {
-      this.memories.delete(conversationId);
+    if (this.memory.expiresAt && this.memory.expiresAt < Date.now()) {
+      this.memory = null;
       return null;
     }
     
-    return memory;
+    return this.memory;
   }
 
   /**
    * Update working memory content
    */
-  update(conversationId: string, updates: Partial<Pick<WorkingMemory, "content" | "context">>): void {
-    const existing = this.memories.get(conversationId);
-    if (!existing) return;
+  update(updates: Partial<Pick<WorkingMemory, "content" | "context">>): void {
+    if (!this.memory) return;
 
-    const updated: WorkingMemory = {
-      ...existing,
+    this.memory = {
+      ...this.memory,
       ...updates,
       updatedAt: Date.now(),
     };
-
-    this.memories.set(conversationId, updated);
   }
 
   /**
-   * Clear working memory for a conversation
+   * Clear working memory
    */
-  clear(conversationId: string): void {
-    this.memories.delete(conversationId);
+  clear(): void {
+    this.memory = null;
   }
 
   /**
    * Clear all expired working memories
    */
   clearExpired(): void {
-    const now = Date.now();
-    for (const [conversationId, memory] of this.memories.entries()) {
-      if (memory.expiresAt && memory.expiresAt < now) {
-        this.memories.delete(conversationId);
-      }
+    if (this.memory && this.memory.expiresAt && this.memory.expiresAt < Date.now()) {
+      this.memory = null;
     }
   }
 
@@ -85,18 +77,20 @@ export class WorkingMemoryStore {
    * Clear all working memories
    */
   clearAll(): void {
-    this.memories.clear();
+    this.memory = null;
   }
 
   /**
    * Get all active working memories
    */
   getAll(): WorkingMemory[] {
+    if (!this.memory) return [];
+    
     const now = Date.now();
-    const values: WorkingMemory[] = [];
-    for (const memory of this.memories.values()) {
-      values.push(memory);
+    if (this.memory.expiresAt && this.memory.expiresAt < now) {
+      return [];
     }
-    return values.filter((m) => !m.expiresAt || m.expiresAt >= now);
+    
+    return [this.memory];
   }
 }
