@@ -289,14 +289,45 @@ Review your working memory and decide:
 2. **What to keep in working memory** - Update the memories array to reflect what's still relevant
 
 ## Actions Available
-- **"respond"**: You have completed processing and are ready to send a final response to the user. 
+
+**CRITICAL DECISION RULES:**
+- **Use "think"** if you need to DO ANYTHING: use tools, check information, perform actions, execute tasks, research, plan, etc.
+- **Use "respond"** ONLY when you have ALREADY completed ALL processing and have the final answer ready to send
+- **Use "sleep"** only when there's nothing urgent to do
+
+**Examples:**
+- User asks "what time is it now" → Use **"think"** with **"execution"** brain part (to check time using tools)
+- User asks "plan a trip" → Use **"think"** with **"planning"** brain part (to create a plan)
+- User asks "research X" → Use **"think"** with **"research"** brain part (to find information)
+- You've already checked the time and have the answer → Use **"respond"** (to send the answer)
+
+- **"think"**: You need to use a brain part to process, act, or gather information before responding
+  - ALWAYS use this if you need to use tools, check information, perform actions, or do any processing
+  - **MUST specify which brain part to use** in the brainPart field (see Available Brain Parts below)
+  - Common cases: checking time/info → "execution", planning → "planning", researching → "research"
+  - The brain part will do the work, then you'll review and decide next action
+  
+- **"respond"**: You have ALREADY completed ALL processing and have the final answer ready
+  - ONLY use this when you've finished all thinking, tool usage, and processing
   - Extract the conversationId from working memory (look for "conversationId: ..." in user messages)
   - Remove the completed user request from memories (the "new message from user" entry you just handled)
   - Keep only important context, learnings, or ongoing tasks
   
-- **"think"**: You need to use a brain part (Planning, Execution, Research, Reflection, etc.) to process further before responding
-  
 - **"sleep"**: Nothing urgent to do right now, wait a bit
+
+## Available Brain Parts
+When choosing "think", select the most appropriate brain part based on what needs to be done:
+
+- **planning**: Break down complex goals into actionable steps, create structured plans, determine task order and dependencies, consider obstacles and alternatives
+- **execution**: Carry out specific tasks and actions, use tools to perform actions, check information (time, date, etc.), monitor progress and adapt, complete tasks and get results. USE THIS for any action that requires tools or checking current state.
+- **research**: Discover methods, tools, and approaches to accomplish tasks, find implementation details (APIs, tools, methods), identify viable solutions - does NOT execute tasks
+- **reflection**: Analyze past actions, outcomes, and experiences, extract lessons learned and insights, identify patterns and connections, formulate what to do differently
+- **criticism**: Evaluate and critique your own work, plans, and outcomes, identify gaps and errors, check if requirements are met, suggest improvements or alternatives
+- **creativity**: Generate novel ideas, solutions, and approaches, think outside the box, combine ideas in novel ways, explore creative options
+- **attention**: Focus on what's important, filter relevant information, prioritize key aspects, filter out noise and distractions
+- **interaction**: Communicate and interact with external systems and others, craft appropriate messages, handle interactions professionally
+- **error-handling**: Analyze errors, failures, and obstacles, find alternative paths to overcome them, identify root causes, generate workarounds
+- **prediction**: Predict potential errors, issues, and obstacles BEFORE they occur, identify better paths forward, avoid predicted pitfalls
 
 ## Working Memory Management Rules
 - **Keep**: Important learnings, ongoing tasks, relevant context, insights from processing
@@ -306,11 +337,18 @@ Review your working memory and decide:
 
 ## Output Format
 You MUST return exactly ONE JSON object with the following structure:
-- action: one of "respond", "think", or "sleep"
-- memories: an array of strings representing the updated working memory
-- conversationId: the conversationId from working memory if action is "respond", otherwise an empty string
+- **respond**: (optional object) If response is needed, include this object with:
+  - needed: true
+  - conversationId: the conversationId from working memory
+- **think**: (optional object) If thinking/action is needed, include this object with:
+  - needed: true
+  - brainPart: (REQUIRED when using think) the brain part ID to use (e.g., "execution", "planning", "research")
+- **memory**: (required array) Updated working memory array - this will completely replace the current working memory
 
-The memories array you return will completely replace the current working memory. Be selective - include only what's truly relevant for future decisions and actions.
+**Important**: 
+- Include either "respond" OR "think" object (or neither for sleep)
+- The "memory" array is always required and will replace the current working memory
+- Be selective with memory - include only what's truly relevant for future decisions and actions
 
 CRITICAL: Return ONLY ONE JSON object. Do not return multiple JSON objects or any text outside the JSON object.`;
 }

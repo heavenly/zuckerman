@@ -148,7 +148,7 @@ export class Self {
 
     console.log(`[Self] Self council started, working memory size: ${workingMemory.length}`);
     const runId = randomUUID();
-    const { action, conversationId, updatedMemories } = await this.decideAction();
+    const { action, conversationId, updatedMemories, brainPart: suggestedBrainPart } = await this.decideAction();
     console.log(`[Self] Decided action: ${action} (runId: ${runId}, conversationId: ${conversationId || "(none)"})`);
 
     if (action === "think") {
@@ -157,7 +157,11 @@ export class Self {
         this.memoryManager.setWorkingMemory(updatedMemories);
       }
 
-      const brainPart = await this.selectBrainPart();
+      // Use suggested brain part if provided, otherwise select one
+      let brainPart = suggestedBrainPart ? getBrainPart(suggestedBrainPart) : null;
+      if (!brainPart) {
+        brainPart = await this.selectBrainPart();
+      }
       if (brainPart) {
         console.log(`[Self] Selected brain part: ${brainPart.name}`);
         const result = await this.runBrainPart(brainPart, runId);
@@ -223,15 +227,21 @@ export class Self {
   // Decision & Processing
   // ============================================================================
 
-  private async decideAction(): Promise<{ action: Action; conversationId: string; updatedMemories?: string[] }> {
+  private async decideAction(): Promise<{ action: Action; conversationId: string; updatedMemories?: string[]; brainPart?: string }> {
     const workingMemory = this.memoryManager.getWorkingMemory();
     console.log(`[Self] Deciding action with ${workingMemory.length} working memory items`);
     const prompt = selfCouncilPrompt(workingMemory);
 
     const selfCouncilSchema = z.object({
-      action: z.enum(["respond", "think", "sleep"]).describe("The action to take: 'respond' if ready to send final response, 'think' if need to process further with a brain part, or 'sleep' if nothing urgent"),
-      memories: z.array(z.string()).describe("Updated working memory array - this will replace the current working memory. Include only relevant items."),
-      conversationId: z.string().describe("The conversationId extracted from working memory if action is 'respond', otherwise empty string"),
+      respond: z.object({
+        needed: z.boolean().describe("Whether response is needed"),
+        conversationId: z.string().describe("The conversationId to respond to"),
+      }).describe("Response action details"),
+      think: z.object({
+        needed: z.boolean().describe("Whether thinking is needed"),
+        brainPart: z.string().describe("Which brain part to use (empty string if not specified)"),
+      }).describe("Thinking action details"),
+      memory: z.array(z.string()).describe("Updated working memory array"),
     });
 
     const result = await generateText({
@@ -247,11 +257,25 @@ export class Self {
 
     const output = result.output;
 
+    // Determine action based on which object is present and set
+    let action: Action = "sleep";
+    let conversationId = "";
+    let brainPart: string | undefined;
+
+    if (output.respond?.needed) {
+      action = "respond";
+      conversationId = output.respond.conversationId || "";
+    } else if (output.think?.needed) {
+      action = "think";
+      brainPart = output.think.brainPart || undefined;
+    }
+
     // Don't update working memory here - return it so it can be updated AFTER response is generated
     return {
-      action: output.action,
-      conversationId: output.conversationId || "",
-      updatedMemories: output.memories
+      action,
+      conversationId,
+      updatedMemories: output.memory,
+      brainPart
     };
   }
 
