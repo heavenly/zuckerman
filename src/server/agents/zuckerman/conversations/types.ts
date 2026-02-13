@@ -34,19 +34,44 @@ export type ToolResultPart = {
   output: unknown;
 };
 
-export type ConversationContent = 
-  | string 
-  | Array<TextPart | ToolCallPart>
-  | Array<ToolResultPart>;
+// Removed ConversationContent - use specific types directly
 
-export interface ConversationMessage {
-  role: "user" | "assistant" | "system" | "tool";
-  content: ConversationContent;
+// Base interface with common fields for all conversation messages
+interface BaseConversationMessage {
   timestamp: number;
-  toolCallId?: string; // For tool messages (deprecated, use content array)
-  toolCalls?: Array<ToolCallPart>; // For assistant messages
   ignore?: boolean;
 }
+
+// Message types matching AI SDK patterns with discriminated unions
+// Each type extends the base interface for shared fields
+export interface SystemConversationMessage extends BaseConversationMessage {
+  role: "system";
+  content: string;
+}
+
+export interface UserConversationMessage extends BaseConversationMessage {
+  role: "user";
+  content: string | Array<TextPart>;
+}
+
+export interface AssistantConversationMessage extends BaseConversationMessage {
+  role: "assistant";
+  content: string | Array<TextPart | ToolCallPart>;
+  toolCalls?: Array<ToolCallPart>;
+}
+
+export interface ToolConversationMessage extends BaseConversationMessage {
+  role: "tool";
+  content: Array<ToolResultPart>;
+  toolCallId?: string; // For backward compatibility (deprecated, use content array)
+}
+
+// Union type for all conversation messages
+export type ConversationMessage =
+  | SystemConversationMessage
+  | UserConversationMessage
+  | AssistantConversationMessage
+  | ToolConversationMessage;
 
 export interface ConversationState {
   conversation: Conversation;

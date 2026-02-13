@@ -59,7 +59,25 @@ export class AgentService implements AgentRuntime {
   private setupEventHandlers(): void {
     this.runtime.on("write", async (event: WriteEvent) => {
       const runId = event.runId || randomUUID();
-      await this.conversationManager.addMessage(event.conversationId, event.role, event.content, { runId });
+      // Get conversationId from event, or use main conversation if empty
+      let conversationId = event.conversationId?.trim() || "";
+      
+      if (!conversationId) {
+        // If no conversationId provided, use main conversation
+        const mainConversation = this.conversationManager.getOrCreateMainConversation(this.agentId);
+        conversationId = mainConversation.id;
+        console.log(`[AgentService] Write event using main conversation: ${conversationId}`);
+      }
+      
+      // Ensure conversation exists
+      const conversation = this.conversationManager.getConversation(conversationId);
+      if (!conversation) {
+        console.warn(`[AgentService] Conversation ${conversationId} not found, skipping write event`);
+        return;
+      }
+      
+      await this.conversationManager.addMessage(conversationId, event.role, event.content, { runId });
+      console.log(`[AgentService] Added ${event.role} message to conversation ${conversationId}`);
     });
 
     this.runtime.on("think", async (event: ThinkEvent) => {
@@ -99,7 +117,7 @@ export class AgentService implements AgentRuntime {
         const lastMessage = conversation?.messages
           .filter(m => m.role === "assistant")
           .pop();
-        // Extract string content from ConversationContent
+        // Extract string content from message
         const response = typeof lastMessage?.content === "string" 
           ? lastMessage.content 
           : Array.isArray(lastMessage?.content)

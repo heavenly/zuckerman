@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-import { join } from "node:path";
 import { getBaseDir } from "@server/world/homedir/paths.js";
 import type {
   Conversation,
@@ -11,7 +9,7 @@ import type {
   ConversationEntry,
   TranscriptEntry,
   ConversationMessage,
-  ConversationContent,
+  TextPart,
   ToolCallPart,
   ToolResultPart,
 } from "./types.js";
@@ -26,59 +24,43 @@ import {
   resolveTranscriptPath,
   messagesToTranscriptEntries,
 } from "./transcript.js";
+import { generateShortID } from "@shared/utils/id.js";
 import { activityRecorder } from "@server/agents/zuckerman/activity/index.js";
 import { pruneUnusedMessages } from "@server/agents/zuckerman/core/memory/memory-conversation-optimizer.js";
 
-// Helper to convert ConversationContent to string
-function contentToString(content: ConversationContent): string {
+// Helper to convert message content to string for transcript
+function contentToString(content: ConversationMessage["content"]): string {
   if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content.map(part => {
-      if (part.type === "text") return part.text;
-      if (part.type === "tool-call") return `[tool-call: ${part.toolName}]`;
-      if (part.type === "tool-result") return `[tool-result: ${part.toolName}]`;
-      return "";
-    }).join(" ");
-  }
-  return "";
+  return content.map(part => 
+    part.type === "text" ? part.text : `[${part.type}: ${part.toolName || ""}]`
+  ).join(" ");
 }
 
-// Helper to convert ConversationMessage to transcript format
-function messageToTranscriptFormat(msg: ConversationMessage): {
-  role: "user" | "assistant" | "system" | "tool";
-  content: string;
-  timestamp: number;
-  toolCallId?: string;
-  toolCalls?: Array<{ id: string; name: string; arguments: string }>;
-} {
+// Convert ConversationMessage to transcript format
+function messageToTranscriptFormat(msg: ConversationMessage) {
   return {
     role: msg.role,
     content: contentToString(msg.content),
     timestamp: msg.timestamp,
-    toolCallId: msg.toolCallId,
-    toolCalls: msg.toolCalls?.map(tc => ({
-      id: tc.toolCallId,
-      name: tc.toolName,
-      arguments: JSON.stringify(tc.args),
-    })),
+    ...(msg.role === "tool" && msg.toolCallId && { toolCallId: msg.toolCallId }),
+    ...(msg.role === "assistant" && msg.toolCalls && {
+      toolCalls: msg.toolCalls.map(tc => ({
+        id: tc.toolCallId,
+        name: tc.toolName,
+        arguments: JSON.stringify(tc.args),
+      })),
+    }),
   };
 }
 
-/**
- * Derive conversation key from agent ID and conversation type/label
- */
 export function deriveConversationKey(
   agentId: string,
   type: ConversationType,
   label?: ConversationLabel,
 ): ConversationKey {
-  if (type === "main") {
-    return `agent:${agentId}:main`;
-  }
-  if (type === "group" || type === "channel") {
-    return `agent:${agentId}:${type}:${label || "default"}`;
-  }
-  return `agent:${agentId}:${label || "default"}`;
+  return type === "main" 
+    ? `agent:${agentId}:main`
+    : `agent:${agentId}:${type}:${label || "default"}`;
 }
 
 export class ConversationManager {
@@ -111,18 +93,41 @@ export class ConversationManager {
         const transcriptEntries = loadTranscript(transcriptPath);
 
         // Convert transcript entries to messages
-        const messages: ConversationMessage[] = transcriptEntries.map((entry) => ({
-          role: entry.role as "user" | "assistant" | "system" | "tool",
-          content: entry.content,
-          timestamp: entry.timestamp,
-          toolCallId: entry.toolCallId,
-          toolCalls: entry.toolCalls?.map(tc => ({
-            type: "tool-call" as const,
-            toolCallId: tc.id,
-            toolName: tc.name,
-            args: JSON.parse(tc.arguments),
-          })),
-        }));
+        const messages: ConversationMessage[] = transcriptEntries.map((entry): ConversationMessage => {
+          const base = { timestamp: entry.timestamp };
+
+          if (entry.role === "system") {
+            return { ...base, role: "system", content: entry.content };
+          }
+          if (entry.role === "user") {
+            return { ...base, role: "user", content: entry.content };
+          }
+          if (entry.role === "assistant") {
+            return {
+              ...base,
+              role: "assistant",
+              content: entry.content,
+              toolCalls: entry.toolCalls?.map(tc => ({
+                type: "tool-call" as const,
+                toolCallId: tc.id,
+                toolName: tc.name,
+                args: JSON.parse(tc.arguments),
+              })),
+            };
+          }
+          // tool
+          return {
+            ...base,
+            role: "tool",
+            content: entry.toolCallId ? [{
+              type: "tool-result" as const,
+              toolCallId: entry.toolCallId,
+              toolName: "unknown",
+              output: entry.content,
+            }] : [],
+            toolCallId: entry.toolCallId,
+          };
+        });
 
         const conversation: Conversation = {
           id: entry.conversationId,
@@ -145,32 +150,30 @@ export class ConversationManager {
     }
   }
 
-  /**
-   * Infer conversation type from conversation key
-   */
-  private inferConversationType(conversationKey: ConversationKey): ConversationType {
-    if (conversationKey.includes(":main")) return "main";
-    if (conversationKey.includes(":group:")) return "group";
-    if (conversationKey.includes(":channel:")) return "channel";
-    return "main";
+  private inferConversationType(key: ConversationKey): ConversationType {
+    return key.includes(":group:") ? "group"
+      : key.includes(":channel:") ? "channel"
+      : "main";
   }
 
-  /**
-   * Prune unused messages when token threshold is exceeded
-   * Delegates to shared pruneUnusedMessages function
-   */
-  private async pruneUnusedMessages(
-    messages: ConversationMessage[],
-    threshold = 50000
-  ): Promise<ConversationMessage[]> {
-    return pruneUnusedMessages(messages, threshold);
+  private getConversationKey(state: ConversationState): ConversationKey {
+    return deriveConversationKey(this.agentId, state.conversation.type, state.conversation.label);
   }
 
-  /**
-   * Calculate approximate tokens for messages
-   */
-  private getTokens(messages: ConversationMessage[]): number {
-    return messages.reduce((sum, m) => sum + Math.ceil((m.content?.length || 0) / 4), 0);
+  private async getOrCreateEntry(conversationId: ConversationId): Promise<{ key: ConversationKey; entry: ConversationEntry } | null> {
+    const state = this.conversations.get(conversationId);
+    if (!state) return null;
+    const store = loadConversationStore(this.storePath);
+    const key = this.getConversationKey(state);
+    const entry = store[key] || {
+      conversationId,
+      updatedAt: Date.now(),
+      createdAt: state.conversation.createdAt,
+      displayName: state.conversation.label,
+      agentId: this.agentId,
+    };
+    store[key] = entry;
+    return { key, entry };
   }
 
   /**
@@ -202,39 +205,20 @@ export class ConversationManager {
     const existingStore = loadConversationStore(this.storePath);
 
     for (const [conversationId, state] of this.conversations.entries()) {
-      const conversationKey = deriveConversationKey(
-        this.agentId,
-        state.conversation.type,
-        state.conversation.label,
-      );
-
-      // Update or create conversation entry
-      const existing = existingStore[conversationKey];
-      const entry: ConversationEntry = {
+      const key = this.getConversationKey(state);
+      const existing = existingStore[key];
+      store[key] = {
+        ...existing,
         conversationId,
         updatedAt: state.conversation.lastActivity,
         createdAt: existing?.createdAt || state.conversation.createdAt,
         displayName: state.conversation.label,
         agentId: this.agentId,
-        // Token tracking will be updated by runtime
         inputTokens: existing?.inputTokens || 0,
         outputTokens: existing?.outputTokens || 0,
         totalTokens: existing?.totalTokens || 0,
         contextTokens: existing?.contextTokens || 0,
-          // Preserve overrides and metadata
-          modelOverride: existing?.modelOverride,
-          providerOverride: existing?.providerOverride,
-          temperatureOverride: existing?.temperatureOverride,
-          timeoutSecondsOverride: existing?.timeoutSecondsOverride,
-          thinkingLevel: existing?.thinkingLevel,
-          verboseLevel: existing?.verboseLevel,
-          reasoningLevel: existing?.reasoningLevel,
-          origin: existing?.origin,
-          deliveryContext: existing?.deliveryContext,
-          lastTranscriptId: existing?.lastTranscriptId,
       };
-
-      store[conversationKey] = entry;
     }
 
     await saveConversationStore(this.storePath, store);
@@ -252,34 +236,19 @@ export class ConversationManager {
       contextTokens?: number;
     },
   ): Promise<void> {
-    const state = this.conversations.get(conversationId);
-    if (!state) return;
+    const result = await this.getOrCreateEntry(conversationId);
+    if (!result) return;
+
+    const { entry } = result;
+    if (counts.inputTokens !== undefined) entry.inputTokens = (entry.inputTokens || 0) + counts.inputTokens;
+    if (counts.outputTokens !== undefined) entry.outputTokens = (entry.outputTokens || 0) + counts.outputTokens;
+    if (counts.totalTokens !== undefined) entry.totalTokens = (entry.totalTokens || 0) + counts.totalTokens;
+    if (counts.contextTokens !== undefined) entry.contextTokens = counts.contextTokens;
+    entry.updatedAt = Date.now();
 
     const store = loadConversationStore(this.storePath);
-    const conversationKey = deriveConversationKey(
-      this.agentId,
-      state.conversation.type,
-      state.conversation.label,
-    );
-
-    const entry = store[conversationKey];
-    if (entry) {
-      if (counts.inputTokens !== undefined) {
-        entry.inputTokens = (entry.inputTokens || 0) + counts.inputTokens;
-      }
-      if (counts.outputTokens !== undefined) {
-        entry.outputTokens = (entry.outputTokens || 0) + counts.outputTokens;
-      }
-      if (counts.totalTokens !== undefined) {
-        entry.totalTokens = (entry.totalTokens || 0) + counts.totalTokens;
-      }
-      if (counts.contextTokens !== undefined) {
-        entry.contextTokens = counts.contextTokens;
-      }
-      entry.updatedAt = Date.now();
-
-      await saveConversationStore(this.storePath, store);
-    }
+    store[result.key] = entry;
+    await saveConversationStore(this.storePath, store);
   }
 
   /**
@@ -289,26 +258,17 @@ export class ConversationManager {
     conversationId: ConversationId,
     updateFn: (entry: ConversationEntry) => Partial<ConversationEntry>,
   ): Promise<ConversationEntry | undefined> {
-    const state = this.conversations.get(conversationId);
-    if (!state) return undefined;
+    const result = await this.getOrCreateEntry(conversationId);
+    if (!result) return undefined;
+
+    const { entry } = result;
+    Object.assign(entry, updateFn(entry));
+    entry.updatedAt = Date.now();
 
     const store = loadConversationStore(this.storePath);
-    const conversationKey = deriveConversationKey(
-      this.agentId,
-      state.conversation.type,
-      state.conversation.label,
-    );
-
-    const entry = store[conversationKey];
-    if (entry) {
-      const updates = updateFn(entry);
-      Object.assign(entry, updates);
-      entry.updatedAt = Date.now();
-      await saveConversationStore(this.storePath, store);
-      return entry;
-    }
-
-    return undefined;
+    store[result.key] = entry;
+    await saveConversationStore(this.storePath, store);
+    return entry;
   }
 
   /**
@@ -323,7 +283,7 @@ export class ConversationManager {
     type: ConversationType = "main",
     agentId?: string,
   ): Conversation {
-    const id = randomUUID();
+    const id = generateShortID();
     const now = Date.now();
 
     const conversation: Conversation = {
@@ -383,16 +343,12 @@ export class ConversationManager {
   async addMessage(
     id: ConversationId,
     role: "user" | "assistant" | "system" | "tool",
-    content: ConversationContent | string,
+    content: string | Array<TextPart | ToolCallPart> | Array<ToolResultPart>,
     options?: {
       toolCallId?: string;
       toolName?: string;
-      toolCalls?: Array<ToolCallPart | {
-        id: string;
-        name: string;
-        arguments: string;
-      }>;
-      runId?: string;
+      toolCalls?: Array<ToolCallPart | { id: string; name: string; arguments: string }>;
+      runId?: string; // For tracking, not stored in message
     },
   ): Promise<void> {
     const state = this.conversations.get(id);
@@ -400,106 +356,72 @@ export class ConversationManager {
 
     const releaseLock = await this.acquireWriteLock(id);
     try {
-      // Convert content to proper format
-      let messageContent: ConversationContent;
+      const timestamp = Date.now();
+      let message: ConversationMessage;
+
+      if (role === "system") {
+        message = {
+          role: "system",
+          content: typeof content === "string" ? content : contentToString(content),
+          timestamp,
+        };
+      } else if (role === "user") {
+        message = {
+          role: "user",
+          content: typeof content === "string" ? content : content as Array<TextPart>,
+          timestamp,
+        };
+      } else if (role === "assistant") {
+        message = {
+          role: "assistant",
+          content: typeof content === "string" ? content : content as Array<TextPart | ToolCallPart>,
+          timestamp,
+          toolCalls: options?.toolCalls?.map(tc => 
+            "toolCallId" in tc ? tc as ToolCallPart : {
+              type: "tool-call" as const,
+              toolCallId: tc.id,
+              toolName: tc.name,
+              args: JSON.parse(tc.arguments),
+            }
+          ),
+        };
+      } else { // role === "tool"
+        const toolContent = typeof content === "string" && options?.toolCallId && options?.toolName
+          ? [{ type: "tool-result" as const, toolCallId: options.toolCallId, toolName: options.toolName, output: content }]
+          : content as Array<ToolResultPart>;
+        
+        message = {
+          role: "tool",
+          content: toolContent,
+          timestamp,
+          toolCallId: options?.toolCallId,
+        };
+      }
       
-      if (role === "tool") {
-        // Tool messages must have content as array of ToolResultPart
-        if (typeof content === "string") {
-          // Convert string to ToolResultPart array
-          if (!options?.toolCallId || !options?.toolName) {
-            throw new Error("Tool messages require toolCallId and toolName");
-          }
-          messageContent = [{
-            type: "tool-result",
-            toolCallId: options.toolCallId,
-            toolName: options.toolName,
-            output: content,
-          }];
-        } else if (Array.isArray(content)) {
-          messageContent = content as Array<ToolResultPart>;
-        } else {
-          throw new Error("Tool messages must have content as string or ToolResultPart array");
-        }
-      } else {
-        // For other roles, accept string or array
-        messageContent = content as ConversationContent;
-      }
-
-      // Convert toolCalls to new format if needed
-      let toolCalls: Array<ToolCallPart> | undefined;
-      if (options?.toolCalls) {
-        toolCalls = options.toolCalls.map(tc => {
-          // Check if already in new format
-          if ("toolCallId" in tc && "toolName" in tc && "args" in tc) {
-            return tc as ToolCallPart;
-          }
-          // Convert from old format
-          const oldFormat = tc as { id: string; name: string; arguments: string };
-          return {
-            type: "tool-call",
-            toolCallId: oldFormat.id,
-            toolName: oldFormat.name,
-            args: JSON.parse(oldFormat.arguments),
-          };
-        });
-      }
-
-      const message: ConversationMessage = {
-        role,
-        content: messageContent,
-        timestamp: Date.now(),
-        toolCallId: options?.toolCallId, // Keep for backward compatibility
-        toolCalls,
-      };
       state.messages.push(message);
       state.conversation.lastActivity = Date.now();
 
       // Prune messages if threshold exceeded
-      state.messages = await this.pruneUnusedMessages(state.messages);
+      state.messages = await pruneUnusedMessages(state.messages);
 
-      // Get existing conversation entry to check lastTranscriptId
-      const conversationKey = deriveConversationKey(
-        this.agentId,
-        state.conversation.type,
-        state.conversation.label,
-      );
-      const store = loadConversationStore(this.storePath);
-      const entry = store[conversationKey];
+      const result = await this.getOrCreateEntry(id);
+      if (!result) return;
 
-      // Only write to transcript if this is a new message (not already written)
-      const transcriptPath = resolveTranscriptPath(
-        this.agentId,
-        id,
-        this.stateDir,
-      );
+      const transcriptPath = resolveTranscriptPath(this.agentId, id, this.stateDir);
       const transcriptEntries = messagesToTranscriptEntries(
         [messageToTranscriptFormat(message)],
-        entry?.lastTranscriptId,
+        result.entry.lastTranscriptId,
       );
 
       if (transcriptEntries.length > 0) {
         const transcriptEntry = transcriptEntries[0];
         appendTranscriptEntry(transcriptPath, transcriptEntry);
+        result.entry.lastTranscriptId = transcriptEntry.id;
+        result.entry.updatedAt = Date.now();
 
-        // Update lastTranscriptId in conversation entry
-        if (entry) {
-          entry.lastTranscriptId = transcriptEntry.id;
-          entry.updatedAt = Date.now();
-          await saveConversationStore(this.storePath, store);
-        } else {
-          // Create new entry if it doesn't exist
-          const newConversationEntry: ConversationEntry = {
-            conversationId: id,
-            updatedAt: Date.now(),
-            createdAt: state.conversation.createdAt,
-            displayName: state.conversation.label,
-            agentId: this.agentId,
-            lastTranscriptId: transcriptEntry.id,
-          };
-          store[conversationKey] = newConversationEntry;
-          await saveConversationStore(this.storePath, store);
-        }
+        const store = loadConversationStore(this.storePath);
+        store[result.key] = result.entry;
+        await saveConversationStore(this.storePath, store);
       }
     } finally {
       releaseLock();
@@ -521,28 +443,15 @@ export class ConversationManager {
   }
 
   getOrCreateMainConversation(agentId?: string): Conversation {
-    // Find existing main conversation
-    for (const state of this.conversations.values()) {
-      if (state.conversation.type === "main") {
-        return state.conversation;
-      }
-    }
-
-    // Create new main conversation
-    return this.createConversation("main", "main", agentId);
+    const main = Array.from(this.conversations.values())
+      .find(s => s.conversation.type === "main")?.conversation;
+    return main || this.createConversation("main", "main", agentId);
   }
 
-  /**
-   * Get conversation entry from store by conversation key
-   */
-  getConversationEntryByKey(conversationKey: ConversationKey): ConversationEntry | undefined {
-    const store = loadConversationStore(this.storePath);
-    return store[conversationKey];
+  getConversationEntryByKey(key: ConversationKey): ConversationEntry | undefined {
+    return loadConversationStore(this.storePath)[key];
   }
 
-  /**
-   * Get all conversation entries
-   */
   getAllConversationEntries(): Record<ConversationKey, ConversationEntry> {
     return loadConversationStore(this.storePath);
   }
@@ -552,38 +461,21 @@ export class ConversationManager {
    */
   async updateChannelMetadata(
     conversationId: ConversationId,
-    metadata: {
-      channel?: string;
-      to?: string;
-      accountId?: string;
-    },
+    metadata: { channel?: string; to?: string; accountId?: string },
   ): Promise<void> {
-    const state = this.conversations.get(conversationId);
-    if (!state) return;
+    const result = await this.getOrCreateEntry(conversationId);
+    if (!result) return;
 
-    const conversationKey = deriveConversationKey(
-      this.agentId,
-      state.conversation.type,
-      state.conversation.label,
-    );
+    const { entry } = result;
+    if (metadata.channel) entry.lastChannel = metadata.channel;
+    if (metadata.to) entry.lastTo = metadata.to;
+    entry.deliveryContext = { ...entry.deliveryContext, ...metadata };
+    entry.origin = { ...entry.origin, channel: metadata.channel, accountId: metadata.accountId };
+    entry.updatedAt = Date.now();
+
     const store = loadConversationStore(this.storePath);
-    const entry = store[conversationKey];
-
-    if (entry) {
-      entry.lastChannel = metadata.channel || entry.lastChannel;
-      entry.lastTo = metadata.to || entry.lastTo;
-      entry.deliveryContext = {
-        channel: metadata.channel || entry.deliveryContext?.channel,
-        to: metadata.to || entry.deliveryContext?.to,
-        accountId: metadata.accountId || entry.deliveryContext?.accountId,
-      };
-      entry.origin = {
-        channel: metadata.channel || entry.origin?.channel,
-        accountId: metadata.accountId || entry.origin?.accountId,
-      };
-      entry.updatedAt = Date.now();
-      await saveConversationStore(this.storePath, store);
-    }
+    store[result.key] = entry;
+    await saveConversationStore(this.storePath, store);
   }
 
   /**
@@ -601,35 +493,13 @@ export class ConversationManager {
     return loadTranscript(transcriptPath);
   }
 
-  /**
-   * Get messages for context, respecting token limits
-   * Loads from transcript if needed, prioritizing recent messages
-   */
   getMessagesForContext(
     conversationId: ConversationId,
     maxTokens?: number,
     maxMessages: number = 50,
-  ): Array<{
-    role: "user" | "assistant" | "system" | "tool";
-    content: string;
-    timestamp: number;
-    toolCallId?: string;
-    toolCalls?: Array<{
-      id: string;
-      name: string;
-      arguments: string;
-    }>;
-  }> {
+  ) {
     const state = this.conversations.get(conversationId);
     if (!state) return [];
-
-    // If we have messages in memory and no token limit, return recent ones
-    if (!maxTokens) {
-      return state.messages.slice(-maxMessages).map(messageToTranscriptFormat);
-    }
-
-    // For now, return recent messages (smart token counting can be added later)
-    // This is a simple implementation - can be enhanced with actual token counting
     return state.messages.slice(-maxMessages).map(messageToTranscriptFormat);
   }
 
@@ -648,68 +518,25 @@ export class ConversationManager {
       timeoutSecondsOverride?: number;
     },
   ): Promise<void> {
-    const state = this.conversations.get(conversationId);
-    if (!state) return;
-
     const releaseLock = await this.acquireWriteLock(conversationId);
     try {
-      const conversationKey = deriveConversationKey(
-        this.agentId,
-        state.conversation.type,
-        state.conversation.label,
-      );
+      const result = await this.getOrCreateEntry(conversationId);
+      if (!result) return;
+
+      Object.assign(result.entry, overrides);
+      result.entry.updatedAt = Date.now();
+
       const store = loadConversationStore(this.storePath);
-      const entry = store[conversationKey] || {
-        conversationId,
-        updatedAt: Date.now(),
-        createdAt: state.conversation.createdAt,
-        displayName: state.conversation.label,
-        agentId: this.agentId,
-      };
-
-      if (overrides.modelOverride !== undefined) {
-        entry.modelOverride = overrides.modelOverride;
-      }
-      if (overrides.providerOverride !== undefined) {
-        entry.providerOverride = overrides.providerOverride;
-      }
-      if (overrides.temperatureOverride !== undefined) {
-        entry.temperatureOverride = overrides.temperatureOverride;
-      }
-      if (overrides.thinkingLevel !== undefined) {
-        entry.thinkingLevel = overrides.thinkingLevel;
-      }
-      if (overrides.verboseLevel !== undefined) {
-        entry.verboseLevel = overrides.verboseLevel;
-      }
-      if (overrides.reasoningLevel !== undefined) {
-        entry.reasoningLevel = overrides.reasoningLevel;
-      }
-      if (overrides.timeoutSecondsOverride !== undefined) {
-        entry.timeoutSecondsOverride = overrides.timeoutSecondsOverride;
-      }
-
-      entry.updatedAt = Date.now();
-      store[conversationKey] = entry;
+      store[result.key] = result.entry;
       await saveConversationStore(this.storePath, store);
     } finally {
       releaseLock();
     }
   }
 
-  /**
-   * Get conversation entry with overrides
-   */
   getConversationEntry(conversationId: ConversationId): ConversationEntry | undefined {
     const state = this.conversations.get(conversationId);
     if (!state) return undefined;
-
-    const conversationKey = deriveConversationKey(
-      this.agentId,
-      state.conversation.type,
-      state.conversation.label,
-    );
-    const store = loadConversationStore(this.storePath);
-    return store[conversationKey];
+    return loadConversationStore(this.storePath)[this.getConversationKey(state)];
   }
 }

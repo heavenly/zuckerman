@@ -44,7 +44,7 @@ export class UnifiedMemoryManager implements MemoryManager {
     this.homedir = homedir;
     this.agentId = agentId || "zuckerman";
 
-    this.workingMemory = new WorkingMemoryStore();
+    this.workingMemory = new WorkingMemoryStore(this.agentId);
     this.episodicMemory = new EpisodicMemoryStore(this.agentId);
     this.semanticMemory = new SemanticMemoryStore(this.agentId);
     this.proceduralMemory = new ProceduralMemoryStore(this.agentId);

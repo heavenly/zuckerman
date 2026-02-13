@@ -47,7 +47,7 @@ export class Self {
       console.log(`[Self] Current working memory size: ${workingMemory.length}`);
 
       // Add message to working memory
-      workingMemory.push(`new message from user: ${message}`);
+      workingMemory.push(`new message from user at conversationId: ${event.conversationId} , message: ${message}`);
       console.log(`[Self] Added message to working memory: ${message.substring(0, 50)}...`);
 
       // Save updated working memory
@@ -148,10 +148,15 @@ export class Self {
 
     console.log(`[Self] Self council started, working memory size: ${workingMemory.length}`);
     const runId = randomUUID();
-    const action = await this.decideAction();
-    console.log(`[Self] Decided action: ${action} (runId: ${runId})`);
+    const { action, conversationId, updatedMemories } = await this.decideAction();
+    console.log(`[Self] Decided action: ${action} (runId: ${runId}, conversationId: ${conversationId || "(none)"})`);
 
     if (action === "think") {
+      // Update working memory with cleaned memories
+      if (updatedMemories) {
+        this.setWorkingMemory(updatedMemories);
+      }
+      
       const brainPart = await this.selectBrainPart();
       if (brainPart) {
         console.log(`[Self] Selected brain part: ${brainPart.name}`);
@@ -162,17 +167,24 @@ export class Self {
         console.log(`[Self] No brain part selected`);
       }
     } else if (action === "respond") {
+      // Generate response FIRST with current working memory (before cleanup)
       console.log(`[Self] Generating response...`);
-      const response = await this.generateResponse(runId);
+      const response = await this.generateResponse(runId, conversationId);
       console.log(`[Self] Response generated (length: ${response.length})`);
 
       await this.emit({
         type: "write",
-        conversationId: "",
+        conversationId,
         content: response,
         role: "assistant",
         runId
       });
+
+      // Update working memory AFTER response is generated and emitted
+      if (updatedMemories) {
+        this.setWorkingMemory(updatedMemories);
+        console.log(`[Self] Updated working memory (removed completed request)`);
+      }
 
     } else if (action === "sleep") {
       // Sleep - do nothing, just wait
@@ -229,11 +241,12 @@ export class Self {
     await this.memoryManager.onNewMessage(content);
   }
 
+
   // ============================================================================
   // Decision & Processing
   // ============================================================================
 
-  private async decideAction(): Promise<Action> {
+  private async decideAction(): Promise<{ action: Action; conversationId: string; updatedMemories?: string[] }> {
     const workingMemory = this.getWorkingMemory();
     console.log(`[Self] Deciding action with ${workingMemory.length} working memory items`);
     const prompt = selfCouncilPrompt(workingMemory);
@@ -241,6 +254,7 @@ export class Self {
     const selfCouncilSchema = z.object({
       action: z.enum(["respond", "think", "sleep"]),
       memories: z.array(z.string()),
+      conversationId: z.string().describe("The conversationId from working memory if action is 'respond', empty string if not found"),
     });
 
     const result = await generateText({
@@ -252,14 +266,16 @@ export class Self {
       output: Output.object({ schema: selfCouncilSchema }),
     });
 
+    console.log(`[Self] Result: ${JSON.stringify(result.output)}`);
+
     const output = result.output;
 
-    if (output.memories.length > 0) {
-      console.log(`[Self] Updating working memory (${output.memories.length} items)`);
-      this.setWorkingMemory(output.memories);
-    }
-
-    return output.action;
+    // Don't update working memory here - return it so it can be updated AFTER response is generated
+    return { 
+      action: output.action, 
+      conversationId: output.conversationId || "",
+      updatedMemories: output.memories
+    };
   }
 
   private async selectBrainPart(): Promise<BrainPart | null> {
@@ -369,9 +385,9 @@ Which brain part should be used next?`;
     return finalContent;
   }
 
-  private async generateResponse(runId: string): Promise<string> {
+  private async generateResponse(runId: string, conversationId: string = ""): Promise<string> {
     const workingMemory = this.getWorkingMemory();
-    console.log(`[Self] Generating response (runId: ${runId}), working memory size: ${workingMemory.length}`);
+    console.log(`[Self] Generating response (runId: ${runId}, conversationId: ${conversationId}), working memory size: ${workingMemory.length}`);
     const workingMemoryText = workingMemory.length > 0
       ? `\n\n## Working Memory\n${workingMemory.map((m, i) => `${i + 1}. ${m}`).join("\n")}`
       : "";
@@ -393,7 +409,7 @@ Which brain part should be used next?`;
       content += chunk;
       await this.emit({
         type: "stream.token",
-        conversationId: "",
+        conversationId,
         runId,
         token: chunk,
       });
@@ -407,7 +423,7 @@ Which brain part should be used next?`;
         content,
         this.availableTools,
         messages,
-        "",
+        conversationId,
         runId
       );
       const toolResults = toolResultMsgs.map(m =>
