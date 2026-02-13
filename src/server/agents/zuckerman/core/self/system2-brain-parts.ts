@@ -257,10 +257,8 @@ You MUST use the browser tool:
 - Take snapshots to read details
 
 STOP when you have:
-- Identified 2-3 viable solutions
-- Compared their pros/cons
+- Identified 2-3 viable solutions that you can use to accomplish X based on my resources and capabilities
 - Found implementation details (APIs, tools, methods)
-- Ready to present recommendations
 
 DO NOT execute the task. DO NOT search for the actual data. Research the TOOLS/METHODS to get the data.`;
     },
