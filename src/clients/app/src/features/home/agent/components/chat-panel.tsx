@@ -9,6 +9,8 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { MessageSquare, Send, Loader2, Plus, History, ChevronDown, CheckCircle2 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { UseAppReturn } from "../../../../hooks/use-app";
 
 interface ChatPanelProps {
@@ -271,7 +273,128 @@ export function ChatPanel({ agentId, state }: ChatPanelProps) {
                           : "bg-muted text-foreground"
                       }`}
                     >
-                      <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                          em: ({ children }) => <em className="italic">{children}</em>,
+                          code: ({ children, className }) => {
+                            const isInline = !className;
+                            return isInline ? (
+                              <code className={`px-1.5 py-0.5 rounded text-xs font-mono ${
+                                msg.role === "user"
+                                  ? "bg-primary-foreground/20 text-primary-foreground"
+                                  : "bg-background/50 text-foreground"
+                              }`}>{children}</code>
+                            ) : (
+                              <code className={`block p-3 rounded-md text-xs font-mono overflow-x-auto ${
+                                msg.role === "user"
+                                  ? "bg-primary-foreground/20 text-primary-foreground"
+                                  : "bg-background/50 text-foreground"
+                              }`}>{children}</code>
+                            );
+                          },
+                          pre: ({ children }) => <pre className="mb-2 last:mb-0">{children}</pre>,
+                          ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
+                          li: ({ children }) => <li className="ml-4">{children}</li>,
+                          blockquote: ({ children }) => <blockquote className={`border-l-4 pl-4 italic my-2 ${
+                            msg.role === "user"
+                              ? "border-primary-foreground/30"
+                              : "border-border"
+                          }`}>{children}</blockquote>,
+                          h1: ({ children }) => <h1 className="text-xl font-bold mb-2 mt-4 first:mt-0">{children}</h1>,
+                          h2: ({ children }) => <h2 className="text-lg font-bold mb-2 mt-4 first:mt-0">{children}</h2>,
+                          h3: ({ children }) => <h3 className="text-base font-bold mb-2 mt-4 first:mt-0">{children}</h3>,
+                          a: ({ children, href, ...props }) => {
+                            if (!href) {
+                              return <span className={`underline ${
+                                msg.role === "user"
+                                  ? "text-primary-foreground/90"
+                                  : "text-primary"
+                              }`}>{children}</span>;
+                            }
+                            const handleClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (href) {
+                                if (typeof window !== 'undefined' && (window as any).electronAPI?.openExternal) {
+                                  try {
+                                    await (window as any).electronAPI.openExternal(href);
+                                  } catch (error) {
+                                    console.error('Failed to open external URL:', error);
+                                    window.open(href, '_blank', 'noopener,noreferrer');
+                                  }
+                                } else {
+                                  window.open(href, '_blank', 'noopener,noreferrer');
+                                }
+                              }
+                            };
+                            return (
+                              <a 
+                                {...props}
+                                href={href} 
+                                className={`underline cursor-pointer ${
+                                  msg.role === "user"
+                                    ? "text-primary-foreground/90 hover:text-primary-foreground"
+                                    : "text-primary hover:text-primary/80"
+                                }`}
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                onClick={handleClick}
+                                style={{ pointerEvents: 'auto', position: 'relative', zIndex: 10 }}
+                              >
+                                {children}
+                              </a>
+                            );
+                          },
+                          table: ({ children }) => (
+                            <div className="my-4 overflow-x-auto">
+                              <table className={`min-w-full border-collapse ${
+                                msg.role === "user"
+                                  ? "border border-primary-foreground/20"
+                                  : "border border-border"
+                              }`}>
+                                {children}
+                              </table>
+                            </div>
+                          ),
+                          thead: ({ children }) => (
+                            <thead className={msg.role === "user" ? "bg-primary-foreground/10" : "bg-muted"}>
+                              {children}
+                            </thead>
+                          ),
+                          tbody: ({ children }) => (
+                            <tbody>{children}</tbody>
+                          ),
+                          tr: ({ children }) => (
+                            <tr className={msg.role === "user" ? "border-b border-primary-foreground/20" : "border-b border-border"}>
+                              {children}
+                            </tr>
+                          ),
+                          th: ({ children }) => (
+                            <th className={`px-4 py-2 text-left font-semibold ${
+                              msg.role === "user"
+                                ? "border border-primary-foreground/20 text-primary-foreground"
+                                : "border border-border text-foreground"
+                            }`}>
+                              {children}
+                            </th>
+                          ),
+                          td: ({ children }) => (
+                            <td className={`px-4 py-2 ${
+                              msg.role === "user"
+                                ? "border border-primary-foreground/20 text-primary-foreground"
+                                : "border border-border text-foreground"
+                            }`}>
+                              {children}
+                            </td>
+                          ),
+                        }}
+                      >
+                        {msg.content}
+                      </ReactMarkdown>
                     </div>
                   </div>
                 );
