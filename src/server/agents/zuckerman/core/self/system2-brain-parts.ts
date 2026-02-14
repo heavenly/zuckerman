@@ -16,7 +16,6 @@ export const SYSTEM2_BRAIN_PARTS: BrainPart[] = [
   {
     id: "planning",
     name: "Planning Module",
-    maxIterations: 10,
     temperature: 0.5,
     getPrompt: (workingMemory: string[]) => {
       const memoryText = formatMemoryText(workingMemory);
@@ -39,7 +38,6 @@ You complete this when you have created a clear, actionable plan that you can ex
   {
     id: "execution",
     name: "Execution Module",
-    maxIterations: 15,
     temperature: 0.7,
     getPrompt: (workingMemory: string[]) => {
       const memoryText = formatMemoryText(workingMemory);
@@ -61,7 +59,6 @@ You complete this when you have successfully executed the task and have results.
   {
     id: "reflection",
     name: "Reflection Module",
-    maxIterations: 5,
     temperature: 0.5,
     getPrompt: (workingMemory: string[]) => {
       const memoryText = formatMemoryText(workingMemory);
@@ -84,7 +81,6 @@ You complete this when you have meaningful reflection and insights for yourself.
   {
     id: "criticism",
     name: "Criticism Module",
-    maxIterations: 5,
     temperature: 0.4,
     getPrompt: (workingMemory: string[]) => {
       const memoryText = formatMemoryText(workingMemory);
@@ -107,7 +103,6 @@ You complete this when you have thoroughly evaluated your work and identified wh
   {
     id: "creativity",
     name: "Creativity Module",
-    maxIterations: 10,
     temperature: 0.9,
     getPrompt: (workingMemory: string[]) => {
       const memoryText = formatMemoryText(workingMemory);
@@ -130,7 +125,6 @@ You complete this when you have generated creative ideas or solutions you can pu
   {
     id: "attention",
     name: "Attention Module",
-    maxIterations: 10,
     temperature: 0.6,
     getPrompt: (workingMemory: string[]) => {
       const memoryText = formatMemoryText(workingMemory);
@@ -153,7 +147,6 @@ You complete this when you have identified and focused on the most relevant info
   {
     id: "interaction",
     name: "Interaction Module",
-    maxIterations: 10,
     temperature: 0.7,
     getPrompt: (workingMemory: string[]) => {
       const memoryText = formatMemoryText(workingMemory);
@@ -176,7 +169,6 @@ You complete this when you have successfully completed the communication.`;
   {
     id: "error-handling",
     name: "Error Handling Module",
-    maxIterations: 15,
     temperature: 0.6,
     getPrompt: (workingMemory: string[]) => {
       const memoryText = formatMemoryText(workingMemory);
@@ -201,7 +193,6 @@ You complete this when you have identified viable alternative paths to overcome 
   {
     id: "prediction",
     name: "Prediction Module",
-    maxIterations: 10,
     toolsAllowed: false,
     temperature: 0.4,
     getPrompt: (workingMemory: string[]) => {
@@ -233,7 +224,6 @@ You complete this when you have identified key potential errors/issues and know 
   {
     id: "research",
     name: "Research Module",
-    maxIterations: 20,
     temperature: 0.3,
     getPrompt: (workingMemory: string[]) => {
       const memoryText = formatMemoryText(workingMemory);

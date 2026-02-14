@@ -319,16 +319,15 @@ export class Self {
 
       const initialUserMessage: ModelMessage = { role: "user" as const, content: prompt };
       const tools = brainPart.toolsAllowed !== false ? this.availableTools : undefined;
-      const maxIterations = brainPart.maxIterations ?? 10;
-      console.log(`[Self] Brain part config - maxIterations: ${maxIterations}, toolsAllowed: ${brainPart.toolsAllowed !== false}`);
+      console.log(`[Self] Brain part config - toolsAllowed: ${brainPart.toolsAllowed !== false}`);
 
       let iterations = 0;
       let messagesHistory: ModelMessage[] = [initialUserMessage];
       let finalContent = "";
 
-      while (iterations < maxIterations) {
+      while (true) {
         try {
-          console.log(`[Self] Brain part iteration ${iterations + 1}/${maxIterations}`);
+          console.log(`[Self] Brain part iteration ${iterations + 1}`);
           const streamResult = await streamText({
             model: this.llmModel,
             system: this.systemPrompt,
@@ -383,10 +382,6 @@ export class Self {
           await this.learnFromError(`runBrainPart.iteration.${brainPart.id}`, error);
           throw error;
         }
-      }
-
-      if (iterations >= maxIterations) {
-        console.log(`[Self] Brain part reached max iterations (${maxIterations})`);
       }
 
       return finalContent;
