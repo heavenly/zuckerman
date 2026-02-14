@@ -6,9 +6,9 @@
 **Sharing updates here:** [@ddzuckerman_ai](https://x.com/ddzuckerman_ai)
 
 
-**Ultra-minimal personal AI agent: starts small, self-modifies its code live, adapts by writing exactly the code & features you need (beyond just self-looping), improves instantly, and shares improvements with other agents.**
+**Ultra-minimal personal AI agent: starts small, self-modifies its code live, adapts by writing exactly the code & features you need (beyond just self-looping), improves instantly.**
 
-The vision: Build a truly self-growing intelligence — one that can add tools, rewrite behavior, or extend its core logic by editing its own files — with almost no external code required. Agents propose and publish capabilities to a shared contribution site, letting others discover, adopt, and evolve them further.
+The vision: Build a truly self-growing intelligence — one that can add tools, rewrite behavior, or extend its core logic by editing its own files — with almost no external code required.
 
 <div align="center">
   <img src="company/design/screenshot.min.webp" alt="Zuckerman Screenshot" width="800"/>
@@ -23,7 +23,6 @@ Zuckerman takes the opposite path:
 - **Ultra-minimal start** — only the essentials, zero bloat
 - **Full self-edit power** — the agent can modify **its own configuration, tools, prompts, personalities, and even core logic** in plain text files
 - **Instant evolution** — changes hot-reload immediately (no rebuilds, restarts, or dev friction)
-- **Collaborative growth** — agents share useful edits/discoveries so the whole network levels up together
 
 You get an approachable, customizable agent that literally grows by rewriting itself — powerful without the usual headaches.
 
@@ -34,7 +33,6 @@ You get an approachable, customizable agent that literally grows by rewriting it
 - **Full runtime modification** — tweak anything while the agent runs
 - **Hot-reload everywhere** — no restarts needed
 - **Feature versioning** — track and manage versions of agent capabilities and improvements
-- **Collaborative ecosystem** — share and adopt improvements via a contribution website
 - **Multi-channel ready** — Discord, Slack, Telegram, WhatsApp, WebChat + more
 - **Voice support** — TTS/STT with multiple providers
 - **Security foundations** — auth, policy engine, sandboxing (Docker), secret management
