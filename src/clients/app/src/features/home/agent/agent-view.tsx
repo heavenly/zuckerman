@@ -103,6 +103,7 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
   const [newMemoryContent, setNewMemoryContent] = useState<string>("");
   const [savingMemory, setSavingMemory] = useState(false);
   const activitiesPollingRef = useRef<NodeJS.Timeout | null>(null);
+  const [currentTime, setCurrentTime] = useState(Date.now());
 
   const tabs = [
     { id: "activities" as AgentTab, label: "Activities", icon: <Activity className="h-4 w-4" /> },
@@ -150,6 +151,15 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
     };
   }, [activeTab, gatewayClient, agentId, activityDateFilter, activityTypeFilter]);
 
+  // Update current time every second for live time display
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   // Load memories when memory tab is active
   useEffect(() => {
     if (activeTab === "memory" && gatewayClient?.isConnected() && !loadingMemories) {
@@ -161,7 +171,7 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
   useEffect(() => {
     if (activities.length > 0) {
       const mostRecent = activities[0]; // Already sorted newest first
-      const isRecent = Date.now() - mostRecent.timestamp < 5 * 60 * 1000; // Last 5 minutes
+      const isRecent = currentTime - mostRecent.timestamp < 5 * 60 * 1000; // Last 5 minutes
       
       if (isRecent) {
         const description = getActivityDescription(mostRecent);
@@ -174,7 +184,7 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
       setCurrentStatus("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activities]);
+  }, [activities, currentTime]);
 
   const loadPrompts = async () => {
     if (!gatewayClient?.isConnected()) {
@@ -506,8 +516,7 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
   };
 
   const formatRelativeTime = (timestamp: number): string => {
-    const now = Date.now();
-    const diff = now - timestamp;
+    const diff = currentTime - timestamp;
     const seconds = Math.floor(diff / 1000);
     const minutes = Math.floor(seconds / 60);
     const hours = Math.floor(minutes / 60);
@@ -1043,8 +1052,8 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
                   <div className="space-y-0">
                     {activities.map((activity, idx) => {
                       const description = getActivityDescription(activity);
-                      const isRecent = Date.now() - activity.timestamp < 5 * 60 * 1000; // Last 5 minutes
-                      const isVeryRecent = Date.now() - activity.timestamp < 60 * 1000; // Last minute
+                      const isRecent = currentTime - activity.timestamp < 5 * 60 * 1000; // Last 5 minutes
+                      const isVeryRecent = currentTime - activity.timestamp < 5 * 1000; // Last 5 seconds
                       
                       return (
                         <div 
