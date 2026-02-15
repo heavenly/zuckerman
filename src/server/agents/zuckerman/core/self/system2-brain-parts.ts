@@ -293,8 +293,8 @@ Review your working memory and decide:
 
 **CRITICAL DECISION RULES:**
 - **Use "think"** if you need to DO ANYTHING: use tools, check information, perform actions, execute tasks, research, plan, etc.
-- **Use "respond"** ONLY when you have ALREADY completed ALL processing and have the final answer ready to send
-- **Use "sleep"** only when there's nothing urgent to do
+- **Use "respond"** ONLY when you have a message to return to the user (i.e., there's a user message waiting for a response AND you have completed all processing and have the final answer ready)
+- **Use "sleep"** when there's nothing urgent to do or no message to return
 
 **Examples:**
 - User asks "what time is it now" → Use **"think"** with **"execution"** brain part (to check time using tools)
@@ -308,9 +308,11 @@ Review your working memory and decide:
   - Common cases: checking time/info → "execution", planning → "planning", researching → "research"
   - The brain part will do the work, then you'll review and decide next action
   
-- **"respond"**: You have ALREADY completed ALL processing and have the final answer ready
-  - ONLY use this when you've finished all thinking, tool usage, and processing
+- **"respond"**: You have a message to return to the user
+  - ONLY use this when there's a user message waiting for a response AND you've finished all thinking, tool usage, and processing
+  - If there's no user message to respond to, use "sleep" instead
   - Extract the conversationId from working memory (look for "conversationId: ..." in user messages)
+  - Provide an explanation of what you're responding to or why you're responding
   - Remove the completed user request from memories (the "new message from user" entry you just handled)
   - Keep only important context, learnings, or ongoing tasks
   
@@ -341,6 +343,7 @@ You MUST return exactly ONE JSON object with the following structure:
 - **respond**: (optional object) If response is needed, include this object with:
   - needed: true
   - conversationId: the conversationId from working memory
+  - explanation: brief explanation of what to respond to or why responding (e.g., "Responding to user's question about the current time", "Providing the research results I found")
 - **think**: (optional object) If thinking/action is needed, include this object with:
   - needed: true
   - brainPart: (REQUIRED when using think) the brain part ID to use (e.g., "execution", "planning", "research")

@@ -1,7 +1,8 @@
 import { join, dirname } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
-import { cwd } from "node:process";
-import { platform, arch, hostname, type, release, cpus } from "node:os";
+import process from "node:process";
+import { cwd, uptime as processUptime } from "node:process";
+import { platform, arch, hostname, type, release, cpus, userInfo, homedir } from "node:os";
 import { version as nodeVersion } from "node:process";
 
 /**
@@ -81,6 +82,57 @@ export async function buildDynamicData(agentDir: string): Promise<string> {
   parts.push(`- **Hostname**: ${hostname()}`);
   parts.push(`- **CPU Cores**: ${cpus().length}`);
   parts.push(`- **Node.js Version**: ${nodeVersion}`);
+  
+  // User & Environment Information
+  const user = userInfo();
+  parts.push(`- **Username**: ${user.username}`);
+  parts.push(`- **Home Directory**: ${homedir()}`);
+  parts.push(`- **Working Directory**: ${cwd()}`);
+  parts.push(`- **Process ID**: ${process.pid}`);
+  parts.push(`- **Process Uptime**: ${Math.floor(processUptime())} seconds`);
+
+  return parts.join("\n");
+}
+
+/**
+ * Build runtime context with current time, date, and other runtime parameters
+ * This should be called dynamically when making LLM calls since time changes
+ */
+export function getRuntimeContext(params?: {
+  isRunning?: boolean;
+  coreInitialized?: boolean;
+  agentId?: string;
+  workingMemorySize?: number;
+}): string {
+  const now = new Date();
+  const parts: string[] = [];
+
+  parts.push("# Current Runtime Context\n");
+
+  // Current Time
+  parts.push(`**Current Time**: ${now.toLocaleString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}`);
+  parts.push(`**Timezone**: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
+
+  // System
+  const platformName = getPlatformName();
+  parts.push(`**System**: ${platformName} (${arch()})`);
+
+  // Agent State
+  if (params) {
+    const stateParts: string[] = [];
+    if (params.agentId !== undefined) {
+      stateParts.push(`Agent: ${params.agentId}`);
+    }
+    if (params.isRunning !== undefined) {
+      stateParts.push(`Running: ${params.isRunning ? 'Yes' : 'No'}`);
+    }
+    if (params.workingMemorySize !== undefined) {
+      stateParts.push(`Memory: ${params.workingMemorySize} items`);
+    }
+    if (stateParts.length > 0) {
+      parts.push(`**State**: ${stateParts.join(', ')}`);
+    }
+  }
 
   return parts.join("\n");
 }

@@ -15,6 +15,7 @@ import { agentDiscovery } from "@server/agents/discovery.js";
 import { ToolExecutor } from "./tool-executor.js";
 import { SYSTEM2_BRAIN_PARTS, getBrainPart, selfCouncilPrompt, getCommunicationPrompt } from "./system2-brain-parts.js";
 import type { BrainPart, EventHandler, Action } from "./types.js";
+import { getRuntimeContext } from "../identity/dynamic-data.js";
 
 export class Self {
   readonly agentId: string;
@@ -289,6 +290,19 @@ export class Self {
   // Decision & Processing
   // ============================================================================
 
+  /**
+   * Get system prompt with runtime context appended
+   */
+  private getSystemPromptWithContext(workingMemorySize?: number): string {
+    const runtimeContext = getRuntimeContext({
+      agentId: this.agentId,
+      isRunning: this.isRunning,
+      coreInitialized: this.coreInitialized,
+      workingMemorySize,
+    });
+    return `${this.systemPrompt}\n\n---\n\n${runtimeContext}`;
+  }
+
   private async decideAction(): Promise<{ action: Action; conversationId: string; updatedMemories?: string[]; brainPart?: string }> {
     const workingMemory = this.memoryManager.getMemories({ type: "working", format: "content" }) as string[];
     console.log(`[Self] Deciding action with ${workingMemory.length} working memory items`);
@@ -298,6 +312,7 @@ export class Self {
       respond: z.object({
         needed: z.boolean().describe("Whether response is needed"),
         conversationId: z.string().describe("The conversationId to respond to"),
+        explanation: z.string().describe("Brief explanation of what to respond to or why responding"),
       }).describe("Response action details"),
       think: z.object({
         needed: z.boolean().describe("Whether thinking is needed"),
@@ -308,7 +323,7 @@ export class Self {
 
     const result = await generateText({
       model: this.llmModel,
-      system: this.systemPrompt,
+      system: this.getSystemPromptWithContext(workingMemory.length),
       messages: [
         { role: "user" as const, content: prompt },
       ],
@@ -365,9 +380,10 @@ export class Self {
       while (true) {
         try {
           console.log(`[Self] Brain part iteration ${iterations + 1}`);
+          const workingMemory = this.memoryManager.getMemories({ type: "working", format: "content" }) as string[];
           const streamResult = await streamText({
             model: this.llmModel,
-            system: this.systemPrompt,
+            system: this.getSystemPromptWithContext(workingMemory.length),
             messages: messagesHistory,
             tools: tools,
           });
@@ -434,7 +450,13 @@ export class Self {
     console.log(`[Self] Generating response (runId: ${runId}, conversationId: ${conversationId}), working memory size: ${workingMemory.length}`);
     
     const communicationPrompt = getCommunicationPrompt(workingMemory);
-    const systemContent = `${this.systemPrompt}\n\n${communicationPrompt}`.trim();
+    const runtimeContext = getRuntimeContext({
+      agentId: this.agentId,
+      isRunning: this.isRunning,
+      coreInitialized: this.coreInitialized,
+      workingMemorySize: workingMemory.length,
+    });
+    const systemContent = `${this.systemPrompt}\n\n---\n\n${runtimeContext}\n\n---\n\n${communicationPrompt}`.trim();
     const messages: ModelMessage[] = [
       { role: "user" as const, content: "Generate response based on working memory." },
     ];
