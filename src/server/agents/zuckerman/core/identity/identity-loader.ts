@@ -70,10 +70,11 @@ export class IdentityLoader {
     }
 
     // Add dynamic data at the end
-    const dynamicData = getSystemContext({
+    const dynamicData = await getSystemContext({
       directories: true,
       systemInfo: true,
       environment: true,
+      modelInfo: true,
       agentDir,
     });
     parts.push(dynamicData);

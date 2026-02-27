@@ -4,6 +4,7 @@ import process from "node:process";
 import { cwd, uptime as processUptime } from "node:process";
 import { platform, arch, hostname, type, release, cpus, userInfo, homedir } from "node:os";
 import { version as nodeVersion } from "node:process";
+import { loadConfig } from "@server/world/config/index.js";
 
 export interface SystemContextOptions {
   /** Include directory information (agent dir, project root) */
@@ -14,6 +15,8 @@ export interface SystemContextOptions {
   environment?: boolean;
   /** Include current time and timezone */
   time?: boolean;
+  /** Include model information (provider, model name, company) */
+  modelInfo?: boolean;
   /** Include agent runtime state */
   agentState?: {
     agentId?: string;
@@ -26,13 +29,14 @@ export interface SystemContextOptions {
 /**
  * Build system context with configurable sections
  */
-export function getSystemContext(options: SystemContextOptions & { agentDir?: string }): string {
+export async function getSystemContext(options: SystemContextOptions & { agentDir?: string }): Promise<string> {
   const parts: string[] = [];
   const {
     directories = false,
     systemInfo = false,
     environment = false,
     time = false,
+    modelInfo = false,
     agentState,
     agentDir,
   } = options;
@@ -75,6 +79,25 @@ export function getSystemContext(options: SystemContextOptions & { agentDir?: st
     parts.push(`- **Process ID**: ${process.pid}`);
     parts.push(`- **Process Uptime**: ${Math.floor(processUptime())} seconds`);
     parts.push("");
+  }
+
+  if (modelInfo) {
+    try {
+      const config = await loadConfig();
+      const provider = config.agents?.defaults?.defaultProvider;
+      const model = config.agents?.defaults?.defaultModel;
+      
+      if (provider) {
+        parts.push("## AI Model Information");
+        parts.push(`- **Provider**: ${provider}`);
+        if (model) {
+          parts.push(`- **Model**: ${model}`);
+        }
+        parts.push("");
+      }
+    } catch (error) {
+      // Silently fail if config can't be loaded
+    }
   }
 
   if (time || agentState) {
